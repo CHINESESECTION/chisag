@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHISAG Master System v35.0 (Optimized)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Master name lookup: Index ID -> official name (from CHISAG_MASTER_NAMES.js). -->
+    <script src="CHISAG_MASTER_NAMES.js"></script>
+
+    <!-- Firebase Realtime Database (optional, for TRUE real-time push). Only needed
+         if you enable SYNC_CONFIG.firebase. Loaded from CDN; if offline it is simply
+         skipped and the system falls back to polling. -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ug: { blue: '#002b5c', gold: '#cfb87c', dark: '#001f42' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        :root { --ug-blue: #002a5c; --ug-gold: #cfb87c; }
+        body { font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif; background-color: #f8fafc; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid var(--ug-gold); border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .auto-filled { animation: highlight 1.5s ease-out; border-color: var(--ug-gold) !important; background-color: #fefce8 !important; }
+        @keyframes highlight { 0% { background-color: #e6fffa; } 100% { background-color: white; } }
+        
+        #imagePreviewTooltip { pointer-events: none; z-index: 9999; transition: opacity 0.15s ease-in-out; }
+        .face-focus { object-fit: cover; object-position: center 35%; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+    <div id="imagePreviewTooltip" class="fixed hidden opacity-0 shadow-2xl rounded-xl border-4 border-white bg-slate-200 overflow-hidden w-48 h-48">
+        <img id="previewImgElement" src="" class="w-full h-full face-focus">
+    </div>
+
+    <header class="bg-ug-blue text-white p-5 shadow-xl border-b-4 border-ug-gold sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-extrabold tracking-wide uppercase font-serif">CHISAG Master System</h1>
+                <p class="text-xs text-ug-gold font-semibold tracking-wider opacity-90">University of Ghana • Chinese Section Database</p>
+            </div>
+            
+            <div class="flex flex-wrap gap-3 items-center justify-center">
+                <button onclick="openAcademicModal()" class="bg-white/10 hover:bg-white/20 text-white border border-ug-gold/50 font-bold py-2 px-4 rounded-md shadow flex items-center transition duration-200 group">
+                    <svg class="w-5 h-5 mr-2 text-ug-gold group-hover:rotate-180 transition-transform duration-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    New Academic Year?
+                </button>
+
+                <div class="h-6 w-px bg-white/20 hidden lg:block"></div>
+
+                <input type="file" id="importExcelInput" accept=".xlsx" class="hidden" onchange="handleFileImport(this)">
+                <button onclick="document.getElementById('importExcelInput').click()" class="bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-4 rounded-md shadow flex items-center transition text-sm">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Import Data
+                </button>
+
+                <button onclick="syncFromForm(true)" id="btnSync" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-4 rounded-md shadow flex items-center transition text-sm">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Sync Form
+                </button>
+                <button onclick="testSyncConnection()" title="Test which sheet the Apps Script sees" class="bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-3 rounded-md shadow flex items-center transition text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </button>
+                <button onclick="resetSyncCache()" title="Clear the sync cache so previously rejected IDs are re-checked" class="bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-3 rounded-md shadow flex items-center transition text-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+                <span id="syncStatus" class="text-white/70 text-xs font-medium hidden lg:inline"></span>
+
+                <button onclick="downloadExcelComplex()" id="btnDownload" class="bg-ug-gold hover:bg-yellow-600 text-ug-blue font-bold py-2 px-4 rounded-md shadow-lg flex items-center transition duration-200 text-sm">
+                    <span id="btnText">Export Backup</span>
+                    <div id="loadingSpinner" class="loader ml-2 hidden"></div>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-2">
+        
+        <div id="birthdayBanner" class="hidden lg:col-span-12 bg-gradient-to-r from-white to-yellow-50 border-l-4 border-ug-gold text-slate-700 p-4 rounded-md shadow-sm mb-2 flex items-start relative">
+            <div class="bg-yellow-100 p-2 rounded-full mr-4 text-ug-gold shrink-0 mt-1">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15.546c-.523 0-1.046.151-1.5.454a2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.704 2.704 0 00-3 0 2.704 2.704 0 01-3 0 2.701 2.701 0 00-1.5-.454M9 6v2m3-2v2m3-2v2M9 3h.01M12 3h.01M15 3h.01M21 21v-7a2 2 0 00-2-2H5a2 2 0 00-2 2v7h18zm-3-9v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2h12z"></path></svg>
+            </div>
+            <div class="flex-1">
+                <div class="flex justify-between items-center mb-2">
+                    <p class="font-bold text-lg text-ug-blue">🎉 Upcoming Celebrants (Next 3 Days)</p>
+                    <button onclick="openBirthdayModal()" class="text-xs bg-white border border-ug-gold text-ug-blue px-3 py-1 rounded-full font-bold hover:bg-ug-gold hover:text-white transition">View Full Calendar</button>
+                </div>
+                <div id="birthdayBannerList" class="space-y-2">
+                    </div>
+            </div>
+            <button onclick="document.getElementById('birthdayBanner').classList.add('hidden')" class="absolute top-2 right-2 text-gray-400 hover:text-gray-600 font-bold text-xl">&times;</button>
+        </div>
+
+        <div class="lg:col-span-4" id="addStudentPanel">
+            <div class="bg-white p-6 rounded-xl shadow-lg border-t-8 border-ug-blue sticky top-24">
+                <h2 class="text-xl font-bold text-ug-blue mb-6 flex items-center">
+                    <span class="bg-ug-blue text-white rounded-md w-8 h-8 flex items-center justify-center mr-3 text-sm font-bold shadow-md">1</span>
+                    Add Student
+                </h2>
+                
+                <form id="rosterForm" class="space-y-4">
+                    <div class="relative group">
+                        <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Index Number</label>
+                        <input type="text" id="sysId" oninput="checkIdLookup()" required class="w-full p-3 bg-slate-50 border border-slate-300 rounded-md focus:border-ug-gold focus:ring-1 focus:ring-ug-gold focus:outline-none font-mono text-sm transition" placeholder="Type ID...">
+                        <p id="lookupMsg" class="absolute -bottom-4 right-0 text-[10px] text-green-600 font-bold h-4"></p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Surname</label>
+                            <input type="text" id="surname" required class="w-full p-3 bg-slate-50 border border-slate-300 rounded-md focus:border-ug-gold focus:ring-1 focus:ring-ug-gold focus:outline-none uppercase text-sm transition">
+                        </div>
+                        <div>
+                            <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Other Names</label>
+                            <input type="text" id="otherNames" required class="w-full p-3 bg-slate-50 border border-slate-300 rounded-md focus:border-ug-gold focus:ring-1 focus:ring-ug-gold focus:outline-none uppercase text-sm transition">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Email</label>
+                        <input type="email" id="email" required class="w-full p-3 bg-slate-50 border border-slate-300 rounded-md focus:border-ug-gold focus:ring-1 focus:ring-ug-gold focus:outline-none text-sm">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Level</label>
+                            <select id="level" class="w-full p-3 border border-slate-300 rounded-md bg-white focus:border-ug-gold focus:outline-none text-sm">
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                                <option value="300">300</option>
+                                <option value="400">400</option>
+                                <option value="RE-SIT">RE-SIT</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Birthday</label>
+                            <div class="flex gap-1">
+                                <select id="dobDay" class="w-1/3 p-3 border border-slate-300 rounded-md bg-white text-xs text-center"><option value="">DD</option></select>
+                                <select id="dobMonth" class="w-2/3 p-3 border border-slate-300 rounded-md bg-white text-xs">
+                                    <option value="">Month</option>
+                                    <option value="Jan">Jan</option><option value="Feb">Feb</option><option value="Mar">Mar</option>
+                                    <option value="Apr">Apr</option><option value="May">May</option><option value="Jun">Jun</option>
+                                    <option value="Jul">Jul</option><option value="Aug">Aug</option><option value="Sep">Sep</option>
+                                    <option value="Oct">Oct</option><option value="Nov">Nov</option><option value="Dec">Dec</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-3 rounded-md border border-slate-200">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-slate-400 font-bold text-[10px] uppercase mb-1">Dues Paid?</label>
+                                <select id="dues" class="w-full p-1.5 border border-slate-300 rounded bg-white text-xs font-semibold text-slate-700"><option value="No">No</option><option value="Yes">Yes</option></select>
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 font-bold text-[10px] uppercase mb-1">Souv Paid?</label>
+                                <select id="souvenirs" class="w-full p-1.5 border border-slate-300 rounded bg-white text-xs font-semibold text-slate-700"><option value="No">No</option><option value="Yes">Yes</option></select>
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 font-bold text-[10px] uppercase mb-1">Collected?</label>
+                                <select id="souvTaken" class="w-full p-1.5 border border-slate-300 rounded bg-white text-xs font-semibold text-slate-700"><option value="No">No</option><option value="Yes">Yes</option></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-slate-500 font-bold text-xs uppercase mb-1 tracking-wider">Photo</label>
+                        <input type="file" id="photo" accept="image/*" class="w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-ug-blue file:text-white hover:file:bg-ug-dark cursor-pointer">
+                    </div>
+
+                    <button type="submit" class="w-full bg-ug-blue hover:bg-ug-dark text-white font-bold py-3 rounded-md transition shadow-lg mt-4 flex justify-center items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                        Save to Database
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="lg:col-span-8 space-y-6" id="rightColumn">
+            
+            <div class="flex gap-2 mb-2">
+                <button onclick="switchView('active')" id="tabActive" class="flex-1 py-3 px-4 rounded-lg font-bold text-sm shadow-sm transition-all bg-ug-blue text-white ring-2 ring-ug-blue">
+                    Current Students
+                </button>
+                <button onclick="switchView('alumni')" id="tabAlumni" class="flex-1 py-3 px-4 rounded-lg font-bold text-sm shadow-sm transition-all bg-white text-slate-500 hover:text-ug-blue hover:bg-slate-50">
+                    Alumni Archive
+                </button>
+                <button onclick="switchView('pending')" id="tabPending" class="flex-1 py-3 px-4 rounded-lg font-bold text-sm shadow-sm transition-all bg-white text-slate-500 hover:text-ug-blue hover:bg-slate-50">
+                    Pending Verifications <span id="pendingCount" class="hidden bg-amber-500 text-white rounded-full px-2 text-[10px] ml-1 align-middle"></span>
+                </button>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-100 flex flex-col gap-4">
+                <div class="flex flex-col md:flex-row gap-4 justify-between items-center">
+                    <div class="relative w-full md:w-1/2">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                        <input type="text" id="searchInput" onkeyup="renderTable()" class="block w-full pl-10 p-2.5 bg-slate-50 border border-slate-300 rounded-md focus:ring-ug-gold focus:border-ug-gold transition" placeholder="Search name, index ID, or email...">
+                    </div>
+                    
+                    <select id="sortFilter" onchange="renderTable()" class="p-2.5 border border-slate-300 rounded-md bg-white text-sm w-full md:w-auto focus:border-ug-gold focus:outline-none cursor-pointer font-medium text-slate-600">
+                        <option value="newest" selected>Date: Newest First</option>
+                        <option value="az">Name: A → Z</option>
+                        <option value="za">Name: Z → A</option>
+                        <option value="id_desc">Index: High → Low</option>
+                        <option value="id_asc">Index: Low → High</option>
+                        <option value="lvl_asc">Level: Low - High</option>
+                    </select>
+                </div>
+
+                <div id="activeFilters" class="flex flex-wrap gap-x-6 gap-y-3 items-center border-t border-slate-100 pt-4">
+                    <button onclick="openBirthdayModal()" class="inline-flex items-center space-x-1 bg-yellow-50 px-3 py-1.5 rounded-full cursor-pointer border border-yellow-200 hover:bg-yellow-100 transition shadow-sm">
+                        <span class="text-xs font-bold text-yellow-700 flex items-center gap-1">🎂 Birthday List View</span>
+                    </button>
+
+                    <div class="h-6 w-px bg-slate-200"></div>
+
+                    <div class="flex gap-3 items-center">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Level</span>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="level-checkbox" value="100" onchange="renderTable()"><span class="text-xs">100</span></label>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="level-checkbox" value="200" onchange="renderTable()"><span class="text-xs">200</span></label>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="level-checkbox" value="300" onchange="renderTable()"><span class="text-xs">300</span></label>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="level-checkbox" value="400" onchange="renderTable()"><span class="text-xs">400</span></label>
+                    </div>
+
+                    <div class="h-6 w-px bg-slate-200"></div>
+
+                    <div class="flex gap-3 items-center">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Souv Paid</span>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="souv-paid-checkbox" value="Yes" onchange="renderTable()"><span class="text-xs text-green-700 font-bold">Yes</span></label>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="souv-paid-checkbox" value="No" onchange="renderTable()"><span class="text-xs text-red-700 font-bold">No</span></label>
+                    </div>
+
+                    <div class="h-6 w-px bg-slate-200"></div>
+
+                    <div class="flex gap-3 items-center">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Souv Taken</span>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="souv-taken-checkbox" value="Yes" onchange="renderTable()"><span class="text-xs text-green-700 font-bold">Yes</span></label>
+                        <label class="inline-flex items-center space-x-1"><input type="checkbox" class="souv-taken-checkbox" value="No" onchange="renderTable()"><span class="text-xs text-red-700 font-bold">No</span></label>
+                    </div>
+
+                    <button onclick="resetFilters()" class="text-xs text-ug-blue hover:text-ug-gold font-bold ml-auto transition">Reset Filters</button>
+                </div>
+                
+                <div id="alumniFilters" class="hidden border-t border-slate-100 pt-4">
+                    <p class="text-xs text-slate-500 italic">Viewing Alumni Archive. Use search to find specific graduates. (Read Only)</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden min-h-[500px]">
+                <div class="p-4 border-b bg-slate-50 flex justify-between items-center">
+                    <h2 class="font-bold text-ug-blue flex items-center text-lg">
+                        <span class="bg-ug-blue text-white rounded-md w-7 h-7 flex items-center justify-center mr-2 text-xs">2</span>
+                        Student Roster
+                    </h2>
+                    <button id="bulkPdfBtn" onclick="bulkDownloadPDFs()" disabled class="bg-ug-gold hover:bg-yellow-500 text-ug-blue font-bold py-2 px-4 rounded-md shadow text-sm transition opacity-40 cursor-not-allowed">⬇ Bulk PDF</button>
+                    <button id="bulkEmailBtn" onclick="bulkEmailPDFs()" disabled class="bg-ug-blue hover:bg-ug-dark text-white font-bold py-2 px-4 rounded-md shadow text-sm transition opacity-40 cursor-not-allowed">✉ Email Selected</button>
+                    <span class="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-xs font-bold" id="countDisplay">0</span>
+                </div>
+
+                <div id="rosterContainer" class="overflow-x-auto max-h-[700px] overflow-y-auto scroll-smooth">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-ug-blue text-white text-xs uppercase sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th class="p-4 font-semibold tracking-wider text-center w-10"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" title="Select all shown" class="w-4 h-4 cursor-pointer"></th>
+                                <th class="p-4 font-semibold tracking-wider w-10">#</th>
+                                <th class="p-4 font-semibold tracking-wider">Student Profile</th>
+                                <th class="p-4 font-semibold tracking-wider">Details & Status</th>
+                                <th class="p-4 font-semibold tracking-wider text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rosterTableBody" class="text-sm divide-y divide-slate-100"></tbody>
+                    </table>
+                    <div id="emptyState" class="hidden text-center py-16">
+                        <p class="text-slate-500 font-medium">No records found.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="fullPhotoModal" class="fixed inset-0 bg-slate-900/95 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4" onclick="closeFullPhotoModal()">
+        <div class="relative max-w-4xl max-h-full">
+             <img id="fullPhotoElement" src="" class="max-h-[90vh] max-w-full rounded-lg shadow-2xl border-4 border-ug-gold object-contain">
+             <button class="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white rounded-full p-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+        </div>
+    </div>
+
+    <div id="birthdayModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden flex items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="bg-ug-blue p-4 flex justify-between items-center shrink-0">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">🎂 Student Birthday Calendar</h3>
+                <button onclick="closeBirthdayModal()" class="text-white/70 hover:text-white"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            
+            <div class="bg-slate-100 p-3 border-b border-slate-200">
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Filter View</label>
+                <select id="bdayFilter" onchange="renderBirthdayList(this.value)" class="w-full p-2 rounded border border-slate-300 text-sm font-semibold text-ug-blue focus:outline-none focus:border-ug-gold">
+                    </select>
+            </div>
+
+            <div id="birthdayListContainer" class="p-6 overflow-y-auto grow space-y-4 bg-slate-50">
+                </div>
+        </div>
+    </div>
+
+    <div id="academicModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all border-t-8 border-ug-gold">
+            <div id="acStep1" class="p-8 text-center">
+                <h3 class="text-2xl font-bold text-ug-blue mb-2">New Academic Year?</h3>
+                <p class="text-slate-500 mb-8 text-sm">Promote levels and archive graduates.</p>
+                <div class="flex gap-4 justify-center">
+                    <button onclick="closeAcademicModal()" class="px-6 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-50">Cancel</button>
+                    <button onclick="goToAcStep2()" class="px-6 py-2 rounded-lg bg-ug-blue text-white font-bold hover:bg-ug-dark shadow-lg">Proceed</button>
+                </div>
+            </div>
+            <div id="acStep2" class="p-8 hidden">
+                <h3 class="text-xl font-bold text-ug-blue mb-4">Graduating Class Tag</h3>
+                <div class="mb-6"><label class="block text-xs font-bold text-slate-500 uppercase mb-1">Academic Year</label><input type="text" id="newAcademicYearInput" class="w-full p-3 border-2 border-slate-300 rounded-lg focus:border-ug-gold focus:outline-none font-bold text-lg text-ug-blue" placeholder="Class of 2025"></div>
+                <div class="flex gap-3 justify-end">
+                    <button onclick="closeAcademicModal()" class="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold">Cancel</button>
+                    <button onclick="executePromotion()" class="px-6 py-2 rounded-lg bg-ug-gold text-ug-blue font-bold hover:bg-yellow-500 shadow-lg">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="editModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md">
+            <h3 class="text-xl font-bold mb-5 text-ug-blue border-b pb-2">Edit Student</h3>
+            <input type="hidden" id="editIndex">
+            <div class="space-y-4">
+                <input type="text" id="editSysId" class="w-full border p-2 rounded-md font-mono font-bold bg-slate-50">
+                <input type="text" id="editSurname" class="w-full border p-2 rounded-md uppercase">
+                <input type="text" id="editOtherNames" class="w-full border p-2 rounded-md uppercase">
+                <input type="email" id="editEmail" class="w-full border p-2 rounded-md">
+                <div class="grid grid-cols-2 gap-3">
+                    <select id="editLevel" class="w-full border p-2 rounded-md bg-white">
+                        <option value="100">100</option><option value="200">200</option><option value="300">300</option><option value="400">400</option><option value="ALUMNI">ALUMNI</option><option value="RE-SIT">RE-SIT</option>
+                    </select>
+                    <div class="flex gap-1">
+                        <select id="editDobDay" class="w-1/3 border p-2 rounded-md text-xs"></select>
+                        <select id="editDobMonth" class="w-2/3 border p-2 rounded-md text-xs">
+                            <option value="">Month</option><option value="Jan">Jan</option><option value="Feb">Feb</option><option value="Mar">Mar</option><option value="Apr">Apr</option><option value="May">May</option><option value="Jun">Jun</option><option value="Jul">Jul</option><option value="Aug">Aug</option><option value="Sep">Sep</option><option value="Oct">Oct</option><option value="Nov">Nov</option><option value="Dec">Dec</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <select id="editDues" class="border p-2 rounded-md text-xs"><option value="No">Dues: No</option><option value="Yes">Dues: Yes</option></select>
+                    <select id="editSouvenirs" class="border p-2 rounded-md text-xs"><option value="No">Souv: No</option><option value="Yes">Souv: Yes</option></select>
+                    <select id="editSouvTaken" class="border p-2 rounded-md text-xs"><option value="No">Taken: No</option><option value="Yes">Taken: Yes</option></select>
+                </div>
+                <input type="text" id="editGradClass" placeholder="Graduation Class (if Alumni)" class="w-full border p-2 rounded-md text-sm">
+                <div>
+                    <label class="text-xs font-bold text-slate-500">Update Photo</label>
+                    <input type="file" id="editPhoto" accept="image/*" class="w-full text-xs text-slate-500">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeEditModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+                <button onclick="saveEdit()" class="px-4 py-2 bg-ug-blue text-white rounded-md hover:bg-ug-dark shadow">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="cardModal" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md hidden flex flex-col items-center justify-center z-50 p-4">
+        <div id="printableCard" class="w-[400px] bg-white border-2 border-gray-200 rounded-xl shadow-2xl overflow-hidden relative shrink-0 transform transition hover:scale-[1.02] duration-300">
+            <div class="bg-ug-blue h-32 relative">
+                <div class="absolute top-4 left-0 w-full text-center text-white opacity-20 font-serif text-4xl font-bold tracking-widest">UG</div>
+                <div class="absolute -bottom-16 left-1/2 transform -translate-x-1/2">
+                    <div class="p-1 bg-white rounded-full shadow-lg">
+                        <img id="cardPhoto" class="w-32 h-32 rounded-full border-4 border-ug-gold bg-gray-200 face-focus" src="">
+                    </div>
+                </div>
+            </div>
+            <div class="pt-20 pb-8 px-6 text-center">
+                <h2 id="cardName" class="text-2xl font-bold text-gray-900 leading-tight uppercase mb-1"></h2>
+                <p id="cardIndex" class="text-gray-600 font-mono text-lg font-bold"></p>
+                <div class="mt-3"><span id="cardLevel" class="inline-block bg-ug-blue text-white text-sm px-4 py-1 rounded-full uppercase font-bold tracking-wider shadow-sm"></span></div>
+                <div class="mt-6 flex flex-col items-center justify-center">
+                    <div id="cardQrcode" class="p-2 border-2 border-ug-gold rounded-lg bg-white"></div>
+                    <p class="text-[12px] font-bold text-black mt-2 uppercase tracking-widest">TUTORIAL ATTENDANCE ID</p>
+                </div>
+            </div>
+            <div class="bg-ug-gold px-4 py-3 text-center"><p class="text-sm text-ug-blue font-extrabold uppercase tracking-wide">University of Ghana • Chinese Section</p></div>
+        </div>
+        <div class="mt-8 flex gap-4">
+            <button onclick="downloadCardPDF()" id="downloadPdfBtn" class="bg-ug-gold text-ug-blue hover:bg-yellow-500 font-bold py-3 px-8 rounded-full shadow-lg">Download PDF</button>
+            <button onclick="closeCardModal()" class="bg-white/20 hover:bg-white/30 text-white border border-white/50 backdrop-blur font-bold py-3 px-8 rounded-full">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const DB_NAME = 'CHISAG_DB_v8'; 
+        const STORE_NAME = 'chisag_store';
+        let students = [];
+        let currentView = 'active'; 
+        let _selectedIds = new Set();   // student IDs selected for bulk PDF download
+
+        // Compare two students by Index ID numerically when possible, else by string.
+        function cmpId(a, b) {
+            const na = parseInt(a.id, 10), nb = parseInt(b.id, 10);
+            if (!isNaN(na) && !isNaN(nb)) return na - nb;
+            return String(a.id).localeCompare(String(b.id));
+        }
+        const MONTH_MAP = { "Jan": 0, "Feb": 1, "Mar": 2, "Apr": 3, "May": 4, "Jun": 5, "Jul": 6, "Aug": 7, "Sep": 8, "Oct": 9, "Nov": 10, "Dec": 11 };
+        const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+        // Normalize arbitrary date strings to "DD MMM" (Bug 3 fix). Handles ISO
+        // ("2005-09-29"), slash ("09/29/2005") and already "29 Sep" formats, so
+        // birthday calculations don't break on non-standard inputs.
+        function normalizeDateStr(dobStr) {
+            if (!dobStr) return '';
+            const s = String(dobStr).trim();
+            if (s.includes('-') || s.includes('/')) {
+                const d = new Date(s);
+                if (!isNaN(d.getTime())) {
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                    return day + " " + monthNames[d.getMonth()];
+                }
+            }
+            return s; // assume already "DD MMM"
+        }
+
+        // --- helpers: offline placeholder, HTML escaping, image mime sniff, base64 ---
+        const PLACEHOLDER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Crect width='60' height='60' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='55%25' font-size='11' text-anchor='middle' fill='%2394a3b8'%3EIMG%3C/text%3E%3C/svg%3E";
+        function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function sniffMime(b){ if(b[0]===0xFF&&b[1]===0xD8&&b[2]===0xFF) return 'image/jpeg'; if(b[0]===0x89&&b[1]===0x50&&b[2]===0x4E&&b[3]===0x47) return 'image/png'; if(b[0]===0x47&&b[1]===0x49&&b[2]===0x46) return 'image/gif'; return 'image/png'; }
+        function bytesToBase64(b){ let s=''; const c=0x8000; for(let i=0;i<b.length;i+=c) s+=String.fromCharCode.apply(null,b.subarray(i,i+c)); return window.btoa(s); }
+
+        const dobDaySelect = document.getElementById('dobDay');
+        const editDobDaySelect = document.getElementById('editDobDay');
+        for (let i = 1; i <= 31; i++) {
+            const val = i < 10 ? '0' + i : i; 
+            const opt = `<option value="${val}">${val}</option>`;
+            dobDaySelect.innerHTML += opt; editDobDaySelect.innerHTML += opt;
+        }
+
+        // --- DB ENGINE ---
+        function openDB() { return new Promise((resolve, reject) => { const request = indexedDB.open(DB_NAME, 1); request.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME); }; request.onsuccess = (e) => resolve(e.target.result); request.onerror = (e) => reject(e.target.error); }); }
+        async function saveStudentsToDB() { const db = await openDB(); return new Promise((resolve, reject) => { const tx = db.transaction(STORE_NAME, 'readwrite'); const store = tx.objectStore(STORE_NAME); store.put(students, 'chisag_data_key'); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); }
+        async function loadStudentsFromDB() { const db = await openDB(); return new Promise((resolve, reject) => { const tx = db.transaction(STORE_NAME, 'readonly'); const store = tx.objectStore(STORE_NAME); const req = store.get('chisag_data_key'); req.onsuccess = () => resolve(req.result || []); req.onerror = () => reject(req.error); }); }
+
+        // --- PHOTO INTERACTION ---
+        const tooltip = document.getElementById('imagePreviewTooltip');
+        const tooltipImg = document.getElementById('previewImgElement');
+        function showPreview(idx, e) { const s = students[idx]; if (!s) return; tooltipImg.src = s.photo || PLACEHOLDER; tooltip.classList.remove('hidden'); tooltip.classList.remove('opacity-0'); movePreview(e); }
+        function movePreview(e) { tooltip.style.left = (e.clientX + 20) + 'px'; tooltip.style.top = (e.clientY - 50) + 'px'; }
+        function hidePreview() { tooltip.classList.add('opacity-0'); setTimeout(() => tooltip.classList.add('hidden'), 200); }
+        function openFullPhotoModal(idx) { const s = students[idx]; document.getElementById('fullPhotoElement').src = s ? (s.photo || '') : ''; document.getElementById('fullPhotoModal').classList.remove('hidden'); hidePreview(); }
+        function closeFullPhotoModal() { document.getElementById('fullPhotoModal').classList.add('hidden'); }
+
+        // --- BIRTHDAY LOGIC ---
+        function getBirthdayStatus(dobStr) {
+            if (!dobStr) return { days: 999 };
+            const parts = normalizeDateStr(dobStr).split(" ");
+            const day = parseInt(parts[0]);
+            const month = MONTH_MAP[parts[1]];
+            if (isNaN(day) || month === undefined) return { days: 999 };
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const bday = new Date(today.getFullYear(), month, day);
+            if (bday < today) bday.setFullYear(today.getFullYear()+1);
+            const diff = Math.ceil((bday - today) / (1000*60*60*24));
+            return { days: diff };
+        }
+
+        function checkBirthdayBanner() {
+            const upcoming = students.filter(s => s.level !== 'ALUMNI' && s.dob).map(s => {
+                const stat = getBirthdayStatus(s.dob);
+                return { ...s, days: stat.days };
+            }).filter(s => s.days <= 2).sort((a,b) => a.days - b.days);
+
+            const banner = document.getElementById('birthdayBanner');
+            const list = document.getElementById('birthdayBannerList');
+            
+            if (upcoming.length > 0) {
+                list.innerHTML = upcoming.map(s => {
+                    let label = s.days === 0 ? "Today!" : (s.days === 1 ? "Tomorrow" : "In 2 days");
+                    let color = s.days === 0 ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700";
+                    return `
+                    <div class="flex items-center gap-3 p-2 bg-slate-50 rounded border border-slate-100">
+                        <img src="${s.photo || PLACEHOLDER}" class="w-8 h-8 rounded-full object-cover border face-focus">
+                        <div class="flex-1 font-bold text-sm text-slate-700">
+                            ${esc(s.surname)} ${esc(s.otherNames)}
+                            <span class="ml-1 text-[10px] text-slate-500 font-normal border px-1 rounded bg-white">Lvl ${esc(s.level)}</span>
+                        </div>
+                        <span class="text-xs font-bold px-2 py-1 rounded ${color}">${label}</span>
+                    </div>`;
+                }).join('');
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+            }
+        }
+
+        // --- NEW BIRTHDAY MODAL LOGIC ---
+        function openBirthdayModal() {
+            const dropdown = document.getElementById('bdayFilter');
+            dropdown.innerHTML = '';
+            
+            const today = new Date();
+            const currentMonthIdx = today.getMonth();
+            let weekCount = 0;
+            let monthCounts = Array(12).fill(0);
+            
+            students.forEach(s => {
+                if(s.level === 'ALUMNI' || !s.dob) return;
+                const stat = getBirthdayStatus(s.dob);
+                if(stat.days <= 7) weekCount++;
+                const parts = normalizeDateStr(s.dob).split(" ");
+                if(parts.length > 1) {
+                    const mIdx = MONTH_MAP[parts[1]];
+                    if(mIdx !== undefined) monthCounts[mIdx]++;
+                }
+            });
+
+            let optionsHtml = `<option value="week">Next 7 Days (${weekCount})</option>`;
+            for(let i=0; i<12; i++) {
+                let mIdx = (currentMonthIdx + i) % 12;
+                optionsHtml += `<option value="${mIdx}">${MONTH_NAMES[mIdx]} (${monthCounts[mIdx]})</option>`;
+            }
+            dropdown.innerHTML = optionsHtml;
+            renderBirthdayList('week');
+            document.getElementById('birthdayModal').classList.remove('hidden');
+        }
+
+        function renderBirthdayList(filterVal) {
+            const container = document.getElementById('birthdayListContainer');
+            container.innerHTML = '';
+            let filteredList = [];
+            
+            if(filterVal === 'week') {
+                filteredList = students.filter(s => s.level !== 'ALUMNI' && s.dob).map(s => {
+                    const stat = getBirthdayStatus(s.dob);
+                    return { ...s, days: stat.days };
+                }).filter(s => s.days <= 7).sort((a,b) => a.days - b.days);
+            } else {
+                const targetMonth = parseInt(filterVal);
+                filteredList = students.filter(s => {
+                    if(s.level === 'ALUMNI' || !s.dob) return false;
+                    const parts = normalizeDateStr(s.dob).split(" ");
+                    return MONTH_MAP[parts[1]] === targetMonth;
+                }).sort((a,b) => parseInt(normalizeDateStr(a.dob).split(" ")[0]) - parseInt(normalizeDateStr(b.dob).split(" ")[0]));
+            }
+
+            if(filteredList.length === 0) {
+                container.innerHTML = `<div class="text-center py-10 text-slate-400">No birthdays found for this selection.</div>`;
+                return;
+            }
+
+            filteredList.forEach(s => {
+                const stat = getBirthdayStatus(s.dob);
+                const days = stat.days;
+                const isToday = days === 0;
+                const div = document.createElement('div');
+                div.className = `flex items-center gap-4 p-3 rounded-lg border shadow-sm ${isToday ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-slate-200'}`;
+                
+                let timeBadge = '';
+                if(filterVal === 'week') {
+                    const label = days === 0 ? "Today" : (days === 1 ? "Tomorrow" : `In ${days} days`);
+                    const color = days === 0 ? "bg-red-500 text-white" : "bg-slate-100 text-slate-600";
+                    timeBadge = `<span class="text-xs font-bold px-2 py-1 rounded ${color}">${label}</span>`;
+                }
+
+                div.innerHTML = `
+                    <img src="${s.photo || PLACEHOLDER}" class="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm face-focus">
+                    <div class="flex-1">
+                        <div class="font-bold text-slate-800 text-lg leading-tight">${esc(s.surname)}, ${esc(s.otherNames)}</div>
+                        <div class="text-xs text-slate-500 font-mono mt-0.5">${esc(s.id)} • Level ${esc(s.level)}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm font-bold text-ug-blue">${s.dob}</div>
+                        ${timeBadge}
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function closeBirthdayModal() { document.getElementById('birthdayModal').classList.add('hidden'); }
+
+        // --- AUTO-FILL & CORE ---
+        function checkIdLookup() {
+            const val = document.getElementById('sysId').value.trim();
+            const m = (typeof MASTER_NAMES !== 'undefined') ? MASTER_NAMES[val] : null;
+            if (m) {
+                document.getElementById('surname').value = m.s;
+                document.getElementById('otherNames').value = m.o;
+                document.getElementById('level').value = m.l;
+                document.getElementById('lookupMsg').textContent = "Found in Master List!";
+            } else {
+                const exists = students.some(s => s.id === val);
+                document.getElementById('lookupMsg').textContent = exists ? "ID already in system" : "";
+            }
+        }
+
+        function switchView(view) {
+            currentView = view;
+            const isActive = (view === 'active');
+            const isAlumni = (view === 'alumni');
+            document.getElementById('addStudentPanel').classList.toggle('hidden', !isActive);
+            document.getElementById('rightColumn').className = isActive ? 'lg:col-span-8 space-y-6' : 'lg:col-span-12 space-y-6';
+            document.getElementById('activeFilters').classList.toggle('hidden', !isActive);
+            document.getElementById('alumniFilters').classList.toggle('hidden', !isAlumni);
+
+            const inactive = "flex-1 py-3 px-4 rounded-lg font-bold text-sm shadow-sm transition-all bg-white text-slate-500 hover:text-ug-blue hover:bg-slate-50";
+            const activeCls = "flex-1 py-3 px-4 rounded-lg font-bold text-sm shadow-sm transition-all bg-ug-blue text-white ring-2 ring-ug-blue";
+            const btnActive = document.getElementById('tabActive');
+            const btnAlumni = document.getElementById('tabAlumni');
+            const btnPending = document.getElementById('tabPending');
+            if (btnActive) btnActive.className = inactive;
+            if (btnAlumni) btnAlumni.className = inactive;
+            if (btnPending) btnPending.className = inactive;
+            if (isActive && btnActive) btnActive.className = activeCls;
+            else if (isAlumni && btnAlumni) btnAlumni.className = activeCls;
+            else if (btnPending) btnPending.className = activeCls;
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('rosterTableBody');
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const sort = document.getElementById('sortFilter').value;
+            
+            const activeLevels = Array.from(document.querySelectorAll('.level-checkbox:checked')).map(cb => cb.value);
+            const activeSouvPaid = Array.from(document.querySelectorAll('.souv-paid-checkbox:checked')).map(cb => cb.value);
+            const activeSouvTaken = Array.from(document.querySelectorAll('.souv-taken-checkbox:checked')).map(cb => cb.value);
+
+            tbody.innerHTML = '';
+            
+            let filtered = students.filter(s => {
+                const isAlumni = (s.level === 'ALUMNI');
+                if (currentView === 'active' && isAlumni) return false;
+                if (currentView === 'alumni' && !isAlumni) return false;
+                if (currentView === 'pending' && s.verified !== false) return false;
+
+                if (search && !JSON.stringify(s).toLowerCase().includes(search)) return false;
+
+                if (currentView === 'active') {
+                    if (activeLevels.length > 0 && !activeLevels.includes(s.level)) return false;
+                    if (activeSouvPaid.length > 0 && !activeSouvPaid.includes(s.souvenirs)) return false;
+                    if (activeSouvTaken.length > 0 && !activeSouvTaken.includes(s.souvTaken)) return false;
+                }
+                return true;
+            });
+
+            filtered.sort((a, b) => {
+                if (sort === 'az') return (a.surname + ' ' + a.otherNames).localeCompare(b.surname + ' ' + b.otherNames);
+                if (sort === 'za') return (b.surname + ' ' + b.otherNames).localeCompare(a.surname + ' ' + a.otherNames);
+                if (sort === 'id_desc') return cmpId(b, a);
+                if (sort === 'id_asc') return cmpId(a, b);
+                if (sort === 'newest') return (b.dateAdded || '').localeCompare(a.dateAdded || '');
+                if (sort === 'lvl_asc') return (parseInt(a.level) || 0) - (parseInt(b.level) || 0);
+                return 0;
+            });
+
+            // Reflect select-all checkbox state (based on currently shown rows).
+            const selectAllCb = document.getElementById('selectAllCheckbox');
+            if (selectAllCb) selectAllCb.checked = filtered.length > 0 && filtered.every(s => _selectedIds.has(s.id));
+            updateBulkButton();
+            updatePendingBadge();
+
+            document.getElementById('countDisplay').innerText = filtered.length;
+            if(filtered.length === 0) document.getElementById('emptyState').classList.remove('hidden');
+            else document.getElementById('emptyState').classList.add('hidden');
+
+            filtered.forEach((s, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition border-b border-slate-100 group relative";
+                
+                const bday = getBirthdayStatus(s.dob);
+                const emoji = bday.days === 0 ? "🎂" : (bday.days === 1 ? "🎉" : "");
+                const imgSrc = s.photo || PLACEHOLDER;
+                const gradBadge = s.gradClass ? `<span class="bg-slate-800 text-white px-2 py-0.5 rounded text-[10px] font-bold">${s.gradClass}</span>` : "";
+                const photoClick = s.photo ? `onclick="openFullPhotoModal(${students.indexOf(s)})"` : "";
+
+                const unverified = (s.verified === false);
+                let actionButtons = '';
+                if (currentView === 'pending') {
+                    actionButtons = `
+                        <button onclick="confirmStudent(${students.indexOf(s)})" class="bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded shadow hover:bg-green-700 transition">✓ Confirm</button>
+                        <button onclick="rejectStudent(${students.indexOf(s)})" class="bg-red-500 text-white text-[10px] font-bold px-3 py-1 rounded shadow hover:bg-red-600 transition">✕ Reject</button>
+                    `;
+                } else if (currentView === 'alumni' || s.level === 'ALUMNI') {
+                    actionButtons = `
+                        <button onclick="openCardModal(${students.indexOf(s)})" class="bg-ug-blue text-white text-[10px] font-bold px-3 py-1 rounded shadow hover:bg-ug-dark transition">ID CARD</button>
+                        <button data-email-idx="${students.indexOf(s)}" onclick="emailStudent(${students.indexOf(s)})" class="bg-ug-gold text-ug-blue text-[10px] font-bold px-3 py-1 rounded shadow hover:bg-yellow-400 transition">Email</button>
+                    `;
+                } else {
+                    actionButtons = `
+                        <button onclick="openCardModal(${students.indexOf(s)})" class="bg-ug-blue text-white text-[10px] font-bold px-3 py-1 rounded shadow">ID</button>
+                        <button data-email-idx="${students.indexOf(s)}" onclick="emailStudent(${students.indexOf(s)})" class="bg-ug-gold text-ug-blue text-[10px] font-bold px-3 py-1 rounded shadow hover:bg-yellow-400 transition">Email</button>
+                        <button onclick="openEditModal(${students.indexOf(s)})" class="bg-white border text-slate-600 text-[10px] font-bold px-3 py-1 rounded">Edit</button>
+                        <button onclick="deleteStudent(${students.indexOf(s)})" class="text-red-400 hover:text-red-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                        ${unverified ? `<button onclick="confirmStudent(${students.indexOf(s)})" class="bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded shadow hover:bg-green-700 transition">Verify</button>` : ''}
+                    `;
+                }
+
+                tr.innerHTML = `
+                    <td class="p-3 text-center align-middle">
+                        <input type="checkbox" class="row-select w-4 h-4 cursor-pointer" data-id="${esc(s.id)}" ${_selectedIds.has(s.id) ? 'checked' : ''} onchange="toggleRowSelect(this)">
+                    </td>
+                    <td class="p-3 text-center align-middle text-xs font-bold text-slate-400">${idx + 1}</td>
+                    <td class="p-3">
+                        <div class="flex items-center space-x-3">
+                            <div ${photoClick} onmouseenter="showPreview(${students.indexOf(s)}, event)" onmouseleave="hidePreview()" onmousemove="movePreview(event)" class="cursor-pointer relative group/photo">
+                                <img src="${imgSrc}" class="w-10 h-10 rounded-full object-cover border-2 border-slate-200 shadow-sm group-hover/photo:border-ug-gold transition face-focus">
+                                ${s.photo ? '<div class="absolute inset-0 bg-black/20 rounded-full opacity-0 group-hover/photo:opacity-100 transition flex items-center justify-center"><svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></div>' : ''}
+                            </div>
+                            <div>
+                                <div class="font-bold text-slate-800 text-sm">${esc(s.surname)}, ${esc(s.otherNames)} ${emoji} ${s.verified === false ? '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold ml-1 align-middle">⚠ Unverified</span>' : ''}</div>
+                                <div class="text-xs text-ug-blue font-mono font-medium">${esc(s.id)}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-3 text-xs">
+                        <div class="text-slate-600 mb-1">${esc(s.email)}</div>
+                        <div class="flex gap-1 mt-1 flex-wrap items-center">
+                            ${currentView === 'active' ? `<span class="bg-blue-100 text-blue-700 px-2 rounded text-[10px] font-bold">Lvl ${s.level}</span>` : gradBadge}
+                            <span class="${s.dues==='Yes'?'text-green-600':'text-red-600'} font-bold border px-1 rounded-[4px] border-slate-200 bg-slate-50">Dues: ${s.dues}</span>
+                             <span class="${s.souvenirs==='Yes'?'text-green-600':'text-red-600'} font-bold border px-1 rounded-[4px] border-slate-200 bg-slate-50">Souv Paid: ${s.souvenirs}</span>
+                             <span class="${s.souvTaken==='Yes'?'text-green-600':'text-red-600'} font-bold border px-1 rounded-[4px] border-slate-200 bg-slate-50">Taken: ${s.souvTaken}</span>
+                        </div>
+                    </td>
+                    <td class="p-3 text-center">
+                        <div class="flex justify-center gap-2 opacity-80 group-hover:opacity-100">
+                            ${actionButtons}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function resetFilters() { Array.from(document.querySelectorAll('input[type="checkbox"]')).forEach(cb => cb.checked = false); renderTable(); }
+        function deleteStudent(idx) { if(confirm("Delete student?")) { students.splice(idx, 1); saveStudentsToDB(); renderTable(); checkBirthdayBanner(); } }
+
+        // --- PENDING VERIFICATION (unknown Index IDs) ---
+        function updatePendingBadge() {
+            const el = document.getElementById('pendingCount');
+            if (!el) return;
+            const n = students.filter(s => s.verified === false).length;
+            if (n > 0) { el.textContent = n; el.classList.remove('hidden'); }
+            else { el.classList.add('hidden'); }
+        }
+        function confirmStudent(idx) {
+            const s = students[idx];
+            if (!s) return;
+            s.verified = true;
+            // Add the ID to the master list so FUTURE syncs auto-trust it.
+            if (typeof MASTER_NAMES !== 'undefined') MASTER_NAMES[s.id] = { s: s.surname, o: s.otherNames, l: s.level };
+            if (typeof MASTER !== 'undefined') MASTER[s.id] = { s: s.surname, o: s.otherNames, l: s.level };
+            masterAdditions[s.id] = { s: s.surname, o: s.otherNames, l: s.level };
+            saveMasterAdditions();
+            saveStudentsToDB();
+            renderTable();
+            checkBirthdayBanner();
+            alert("Confirmed " + (s.surname || "") + " " + (s.otherNames || "") + " (" + (s.id || "") + "). Added to the master list — future syncs will auto-verify this ID.");
+        }
+        function rejectStudent(idx) {
+            const s = students[idx];
+            if (!s) return;
+            if (!confirm("Reject " + (s.surname || s.id) + "? This entry will be removed and blocked from re-syncing.")) return;
+            rejectedIds[s.id] = true;
+            saveRejectedIds();
+            students.splice(idx, 1);
+            saveStudentsToDB();
+            renderTable();
+            checkBirthdayBanner();
+        }
+
+        // --- IMPORT/EXPORT/MIGRATION ---
+        async function handleFileImport(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            
+            reader.onload = async function(e) {
+                const buffer = e.target.result;
+                const wb = new ExcelJS.Workbook();
+                try { await wb.xlsx.load(buffer); } catch(err) { alert("Invalid Excel file."); return; }
+                const ws = wb.worksheets[0];
+                if (!ws) return;
+
+                const rowImageMap = {};
+                ws.getImages().forEach(img => {
+                    const r = img.range.tl.nativeRow + 1;
+                    const media = wb.model.media.find(m => m.index === img.imageId);
+                    if (media && media.buffer) {
+                        const bytes = new Uint8Array(media.buffer);
+                        // ExcelJS mislabels JPEGs as "png"; sniff the real type from bytes
+                        rowImageMap[r] = 'data:' + sniffMime(bytes) + ';base64,' + bytesToBase64(bytes);
+                    }
+                });
+
+                const colMap = { id: -1, surname: -1, other: -1, level: -1, dob: -1, dues: -1, souvPaid: -1, souvTaken: -1, email: -1, gradClass: -1 };
+                ws.getRow(1).eachCell((cell, colNum) => {
+                    const val = cell.value ? cell.value.toString().toLowerCase() : "";
+                    if (val.includes("index id")) colMap.id = colNum;
+                    else if (val === "surname") colMap.surname = colNum;
+                    else if (val.includes("other names")) colMap.other = colNum;
+                    else if (val === "level") colMap.level = colNum;
+                    else if (val === "dob") colMap.dob = colNum;
+                    else if (val === "dues") colMap.dues = colNum;
+                    else if (val.includes("souv paid")) colMap.souvPaid = colNum;
+                    else if (val.includes("souv taken")) colMap.souvTaken = colNum;
+                    else if (val === "email") colMap.email = colNum;
+                    else if (val.includes("graduation class")) colMap.gradClass = colNum;
+                });
+
+                if (colMap.id === -1 || colMap.surname === -1) { alert("Headers missing."); return; }
+
+                let count = 0, skipped = 0;
+                ws.eachRow((row, rowNum) => {
+                    if (rowNum === 1) return;
+                    const getVal = (idx) => idx !== -1 ? (row.getCell(idx).value || "").toString().trim() : "";
+                    const id = getVal(colMap.id);
+                    if (!id) return;
+
+                    const gradClassVal = getVal(colMap.gradClass);
+                    let levelVal = getVal(colMap.level).replace("LEVEL", "").trim();
+                    if (gradClassVal) levelVal = "ALUMNI";
+
+                    const newStudent = {
+                        id: id,
+                        surname: getVal(colMap.surname).toUpperCase(),
+                        otherNames: getVal(colMap.other).toUpperCase(),
+                        level: levelVal || "100",
+                        dob: getVal(colMap.dob),
+                        dues: getVal(colMap.dues) || "No",
+                        souvenirs: getVal(colMap.souvPaid) || "No",
+                        souvTaken: getVal(colMap.souvTaken) || "No",
+                        email: getVal(colMap.email),
+                        gradClass: gradClassVal,
+                        photo: rowImageMap[rowNum] || "", 
+                        dateAdded: new Date().toISOString()
+                    };
+
+                    if (!students.some(s => s.id === id)) {
+                        students.push(newStudent);
+                        count++;
+                    } else {
+                        skipped++;
+                    }
+                });
+
+                await saveStudentsToDB();
+                renderTable();
+                checkBirthdayBanner();
+                alert(`Imported ${count} students.${skipped ? ' ' + skipped + ' duplicate ID(s) skipped.' : ''}`);
+                input.value = ""; 
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function downloadExcelComplex() {
+            if (students.length === 0) { alert("No data."); return; }
+            const btn = document.getElementById('btnText');
+            const spin = document.getElementById('loadingSpinner');
+            btn.innerText = "Exporting..."; spin.classList.remove('hidden');
+
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('CHISAG Roster');
+            
+            ws.columns = [
+                { header: 'No.', key: 'no', width: 6 },
+                { header: 'Picture', key: 'pic', width: 12 },
+                { header: 'Index ID', key: 'id', width: 15 },
+                { header: 'Surname', key: 's', width: 20 },
+                { header: 'Other Names', key: 'o', width: 25 },
+                { header: 'Level', key: 'l', width: 10 },
+                { header: 'DOB', key: 'dob', width: 12 },
+                { header: 'Dues', key: 'd', width: 10 },
+                { header: 'Souv Paid', key: 'sp', width: 10 },
+                { header: 'Souv Taken', key: 'st', width: 10 },
+                { header: 'Email', key: 'e', width: 30 },
+                { header: 'Graduation Class', key: 'gc', width: 20 }
+            ];
+
+            students.forEach((s, i) => {
+                const rowIndex = i + 2; 
+                const row = ws.addRow({
+                    no: i + 1,
+                    id: s.id, s: s.surname, o: s.otherNames, l: s.level,
+                    dob: s.dob, d: s.dues, sp: s.souvenirs, st: s.souvTaken,
+                    e: s.email, gc: s.gradClass || ""
+                });
+                row.height = 60; 
+
+                if (s.photo) {
+                    try {
+                        const base64Data = s.photo.split(',')[1];
+                        const m = s.photo.match(/data:(image\/\w+);base64,/);
+                        const ext = m ? m[1].split('/')[1] : 'png';
+                        const imageId = wb.addImage({ base64: base64Data, extension: ext });
+                        ws.addImage(imageId, {
+                            tl: { col: 1.1, row: rowIndex - 1.1 },
+                            ext: { width: 50, height: 50 }
+                        });
+                    } catch (e) { console.error("Img error", e); }
+                }
+            });
+
+            const buf = await wb.xlsx.writeBuffer();
+            saveAs(new Blob([buf]), "CHISAG_Backup_Photos.xlsx");
+            btn.innerText = "Export Backup"; spin.classList.add('hidden');
+        }
+
+        // --- ACADEMIC YEAR LOGIC ---
+        function openAcademicModal() { document.getElementById('academicModal').classList.remove('hidden'); document.getElementById('acStep1').classList.remove('hidden'); document.getElementById('acStep2').classList.add('hidden'); }
+        function closeAcademicModal() { document.getElementById('academicModal').classList.add('hidden'); }
+        function goToAcStep2() { document.getElementById('acStep1').classList.add('hidden'); document.getElementById('acStep2').classList.remove('hidden'); }
+        function executePromotion() {
+            const tag = document.getElementById('newAcademicYearInput').value.trim() || "Alumni";
+            students.forEach(s => {
+                if (s.level === 'ALUMNI') return;
+                if (s.level == '400') { s.level = 'ALUMNI'; s.gradClass = tag; }
+                else if (['100','200','300'].includes(s.level)) s.level = (parseInt(s.level)+100).toString();
+            });
+            saveStudentsToDB(); closeAcademicModal(); renderTable();
+        }
+
+        // --- CRUD MODAL HANDLERS ---
+        document.getElementById('rosterForm').addEventListener('submit', function(e) { e.preventDefault(); const sysId = document.getElementById('sysId').value.trim(); if(students.some(s=>s.id==sysId)) {alert("ID exists");return;} const newStudent = { id: sysId, surname: document.getElementById('surname').value.toUpperCase(), otherNames: document.getElementById('otherNames').value.toUpperCase(), email: document.getElementById('email').value, level: document.getElementById('level').value, dob: (document.getElementById('dobDay').value && document.getElementById('dobMonth').value) ? `${document.getElementById('dobDay').value} ${document.getElementById('dobMonth').value}` : "", dues: document.getElementById('dues').value, souvenirs: document.getElementById('souvenirs').value, souvTaken: document.getElementById('souvTaken').value, photo: "", dateAdded: new Date().toISOString() }; const file = document.getElementById('photo').files[0]; const finish = () => { students.push(newStudent); saveStudentsToDB(); renderTable(); checkBirthdayBanner(); document.getElementById('rosterForm').reset(); }; if(file) { const r = new FileReader(); r.onload = (e) => { newStudent.photo = e.target.result; finish(); }; r.readAsDataURL(file); } else finish(); });
+        
+        function openEditModal(idx) { const s = students[idx]; document.getElementById('editIndex').value=idx; document.getElementById('editSysId').value=s.id; document.getElementById('editSurname').value=s.surname; document.getElementById('editOtherNames').value=s.otherNames; document.getElementById('editEmail').value=s.email; document.getElementById('editLevel').value=s.level; document.getElementById('editDues').value=s.dues; document.getElementById('editSouvenirs').value=s.souvenirs; document.getElementById('editSouvTaken').value=s.souvTaken; document.getElementById('editGradClass').value=s.gradClass||""; if(s.dob){ const p=normalizeDateStr(s.dob).split(" "); if(p.length>1){ document.getElementById('editDobDay').value=p[0]; document.getElementById('editDobMonth').value=p[1];}} document.getElementById('editModal').classList.remove('hidden'); }
+        function closeEditModal() { document.getElementById('editModal').classList.add('hidden'); }
+        function saveEdit() { const idx = document.getElementById('editIndex').value; const s = students[idx]; s.id = document.getElementById('editSysId').value; s.surname = document.getElementById('editSurname').value.toUpperCase(); s.otherNames = document.getElementById('editOtherNames').value.toUpperCase(); s.email = document.getElementById('editEmail').value; s.level = document.getElementById('editLevel').value; s.dues = document.getElementById('editDues').value; s.souvenirs = document.getElementById('editSouvenirs').value; s.souvTaken = document.getElementById('editSouvTaken').value; s.gradClass = document.getElementById('editGradClass').value; const d = document.getElementById('editDobDay').value; const m = document.getElementById('editDobMonth').value; if(d&&m) s.dob = `${d} ${m}`; const f = document.getElementById('editPhoto').files[0]; if(f) { const r = new FileReader(); r.onload = (e) => { s.photo = e.target.result; saveStudentsToDB(); renderTable(); checkBirthdayBanner(); closeEditModal(); }; r.readAsDataURL(f); } else { saveStudentsToDB(); renderTable(); checkBirthdayBanner(); closeEditModal(); } }
+
+        function openCardModal(idx) { const s = students[idx]; window.currentCardIdx=idx; document.getElementById('cardName').textContent=`${s.surname} ${s.otherNames}`; document.getElementById('cardIndex').textContent=s.id; document.getElementById('cardLevel').textContent=s.level==='ALUMNI'?"GRADUATE":`LEVEL ${s.level}`; document.getElementById('cardPhoto').src=s.photo||PLACEHOLDER; document.getElementById('cardQrcode').innerHTML=""; new QRCode(document.getElementById("cardQrcode"),{text:s.id,width:100,height:100}); document.getElementById('cardModal').classList.remove('hidden'); }
+        function closeCardModal() { document.getElementById('cardModal').classList.add('hidden'); }
+        
+        // OPTIMIZED PDF GEN
+        function downloadCardPDF() { 
+            const btn = document.getElementById('downloadPdfBtn');
+            btn.innerText = "Generating...";
+            const card = document.getElementById('printableCard'); 
+            // Build a filesystem-safe filename from the student's full name.
+            const s = students[window.currentCardIdx];
+            let fname = "ID_Card";
+            if (s) {
+                const raw = ((s.surname || "") + " " + (s.otherNames || "")).trim();
+                const safe = raw.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim();
+                fname = safe || ("ID_" + (s.id || "Card"));
+            }
+            // Scale reduced to 2 for speed, JPEG quality 0.8
+            html2canvas(card, { scale: 2, useCORS: true }).then(canvas => { 
+                const img = canvas.toDataURL('image/jpeg', 0.8); 
+                const doc = new window.jspdf.jsPDF('p', 'mm', 'a4'); 
+                // Center image on A4
+                doc.addImage(img, 'JPEG', 40, 40, 130, (canvas.height*130/canvas.width)); 
+                doc.save(fname + ".pdf"); 
+                btn.innerText = "Download PDF";
+            }); 
+        }
+
+        // ===================== BULK PDF DOWNLOAD =====================
+        function updateBulkButton() {
+            const n = _selectedIds.size;
+            const pdfBtn = document.getElementById('bulkPdfBtn');
+            if (pdfBtn) {
+                pdfBtn.innerText = n > 0 ? `⬇ Bulk PDF (${n})` : "⬇ Bulk PDF";
+                pdfBtn.disabled = n === 0;
+                pdfBtn.classList.toggle('opacity-40', n === 0);
+                pdfBtn.classList.toggle('cursor-not-allowed', n === 0);
+            }
+            const mailBtn = document.getElementById('bulkEmailBtn');
+            if (mailBtn) {
+                mailBtn.innerText = n > 0 ? `✉ Email (${n})` : "✉ Email Selected";
+                mailBtn.disabled = n === 0;
+                mailBtn.classList.toggle('opacity-40', n === 0);
+                mailBtn.classList.toggle('cursor-not-allowed', n === 0);
+            }
+        }
+
+        function toggleRowSelect(chk) {
+            const id = chk.getAttribute('data-id');
+            if (chk.checked) _selectedIds.add(id); else _selectedIds.delete(id);
+            // Keep the select-all checkbox in sync if it now mismatches.
+            const cb = document.getElementById('selectAllCheckbox');
+            if (cb) {
+                const all = Array.from(document.querySelectorAll('#rosterTableBody .row-select'));
+                cb.checked = all.length > 0 && all.every(c => c.checked);
+            }
+            updateBulkButton();
+        }
+
+        function toggleSelectAll(master) {
+            document.querySelectorAll('#rosterTableBody .row-select').forEach(chk => {
+                chk.checked = master.checked;
+                const id = chk.getAttribute('data-id');
+                if (master.checked) _selectedIds.add(id); else _selectedIds.delete(id);
+            });
+            updateBulkButton();
+        }
+
+        // Build an off-screen copy of the ID card for a given student so we can
+        // capture it with html2canvas without disturbing the visible UI.
+        function buildCardNode(s) {
+            const wrap = document.createElement('div');
+            wrap.style.position = 'fixed';
+            wrap.style.left = '-10000px';
+            wrap.style.top = '0';
+            wrap.style.width = '400px';
+            wrap.innerHTML = `
+                <div style="width:400px;background:#ffffff;border:2px solid #e5e7eb;border-radius:12px;overflow:hidden;box-sizing:border-box;">
+                    <div style="background:#0b2e4f;height:128px;position:relative;">
+                        <div style="position:absolute;top:16px;left:0;width:100%;text-align:center;color:#ffffff;opacity:0.2;font-size:36px;font-weight:bold;letter-spacing:4px;">UG</div>
+                        <div style="position:absolute;bottom:-64px;left:50%;transform:translateX(-50%);">
+                            <div style="padding:4px;background:#ffffff;border-radius:9999px;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+                                <img src="${s.photo || PLACEHOLDER}" style="width:128px;height:128px;border-radius:9999px;border:4px solid #f5c518;background:#e5e7eb;object-fit:cover;">
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding:80px 24px 32px;text-align:center;box-sizing:border-box;">
+                        <h2 style="font-size:24px;font-weight:bold;color:#111111;text-transform:uppercase;line-height:1.1;margin:0 0 4px;">${esc((s.surname || "") + " " + (s.otherNames || ""))}</h2>
+                        <p style="color:#555555;font-family:monospace;font-size:18px;font-weight:bold;margin:0;">${esc(s.id)}</p>
+                        <div style="margin-top:12px;"><span style="display:inline-block;background:#0b2e4f;color:#ffffff;font-size:14px;padding:4px 16px;border-radius:9999px;text-transform:uppercase;font-weight:bold;letter-spacing:1px;">${s.level === 'ALUMNI' ? 'GRADUATE' : 'LEVEL ' + esc(s.level)}</span></div>
+                        <div style="margin-top:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                            <div class="qrbox" style="padding:8px;border:2px solid #f5c518;border-radius:8px;background:#ffffff;"></div>
+                            <p style="font-size:12px;font-weight:bold;color:#000000;margin-top:8px;text-transform:uppercase;letter-spacing:2px;">TUTORIAL ATTENDANCE ID</p>
+                        </div>
+                    </div>
+                    <div style="background:#f5c518;padding:12px 16px;text-align:center;"><p style="font-size:14px;color:#0b2e4f;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin:0;">University of Ghana • Chinese Section</p></div>
+                </div>`;
+            document.body.appendChild(wrap);
+            const qrBox = wrap.querySelector('.qrbox');
+            new QRCode(qrBox, { text: s.id, width: 100, height: 100 });
+            return wrap;
+        }
+
+        async function renderCardToPdf(s) {
+            const node = buildCardNode(s);
+            // Give the QR library a moment to draw into its canvas/placeholder.
+            await new Promise(r => setTimeout(r, 80));
+            try {
+                const canvas = await html2canvas(node.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                const img = canvas.toDataURL('image/jpeg', 0.8);
+                const doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                doc.addImage(img, 'JPEG', 40, 40, 130, (canvas.height * 130 / canvas.width));
+                return doc.output('arraybuffer');
+            } finally {
+                node.remove();
+            }
+        }
+
+        async function bulkDownloadPDFs() {
+            if (_selectedIds.size === 0) { alert("Select at least one student using the checkboxes."); return; }
+            const sel = students.filter(s => _selectedIds.has(s.id));
+            if (sel.length === 0) { alert("None of the selected IDs match the current roster."); return; }
+            const btn = document.getElementById('bulkPdfBtn');
+            if (typeof JSZip === 'undefined') { alert("JSZip failed to load. Connect to the internet and refresh the page."); return; }
+            btn.disabled = true;
+            const total = sel.length;
+            try {
+                const zip = new JSZip();
+                let done = 0;
+                for (const s of sel) {
+                    const buf = await renderCardToPdf(s);
+                    const raw = ((s.surname || "") + " " + (s.otherNames || "")).trim();
+                    const safe = raw.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim() || ("ID_" + (s.id || "Card"));
+                    let fname = safe + ".pdf";
+                    let i = 1;
+                    while (zip.files[fname]) { fname = safe + " (" + (i++) + ").pdf"; }
+                    zip.file(fname, buf);
+                    done++;
+                    btn.innerText = `Generating ${done}/${total}...`;
+                }
+                const blob = await zip.generateAsync({ type: "blob" });
+                saveAs(blob, "CHISAG_ID_Cards.zip");
+            } catch (e) {
+                console.error("Bulk PDF failed", e);
+                alert("Bulk download failed: " + (e && e.message ? e.message : e));
+            } finally {
+                updateBulkButton();
+            }
+        }
+
+        // ===================== BULK / SINGLE EMAIL OF ID CARDS =====================
+        // The browser builds the same styled card PDF, then hands the base64 to the
+        // Apps Script (doPost), which emails it via Gmail. Reuses buildCardNode().
+        async function renderCardToDataUrl(s) {
+            const node = buildCardNode(s);
+            await new Promise(r => setTimeout(r, 80)); // let the QR draw
+            try {
+                const canvas = await html2canvas(node.firstElementChild, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                const img = canvas.toDataURL('image/jpeg', 0.8);
+                const doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                doc.addImage(img, 'JPEG', 40, 40, 130, (canvas.height * 130 / canvas.width));
+                return doc.output('datauristring'); // "data:application/pdf;base64,...."
+            } finally {
+                node.remove();
+            }
+        }
+
+        // Send one student's card by email. Returns { ok, error }. If `btn` is given,
+        // its label is temporarily changed to "Sending...".
+        async function sendCardEmail(s, btn) {
+            if (!s.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.email)) {
+                return { ok: false, error: "no valid email" };
+            }
+            const prev = btn ? btn.innerText : "";
+            if (btn) btn.innerText = "Sending...";
+            try {
+                const pdf = await renderCardToDataUrl(s);
+                const name = ((s.surname || "") + " " + (s.otherNames || "")).trim();
+                const res = await fetch(SYNC_CONFIG.webAppUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" }, // simple type -> no CORS preflight
+                    body: JSON.stringify({ to: s.email, pdf: pdf, name: name, otherNames: (s.otherNames || ""), key: SYNC_CONFIG.key })
+                });
+                const out = await res.json();
+                if (!out || !out.ok) return { ok: false, error: (out && out.error) || "server rejected" };
+                return { ok: true };
+            } catch (e) {
+                return { ok: false, error: (e && e.message) ? e.message : String(e) };
+            } finally {
+                if (btn) btn.innerText = prev;
+            }
+        }
+
+        // Per-row button handler.
+        function emailStudent(idx) {
+            const s = students[idx];
+            if (!s) return;
+            const btn = document.querySelector('[data-email-idx="' + idx + '"]');
+            sendCardEmail(s, btn).then(r => {
+                if (r.ok) {
+                    if (btn) { btn.innerText = "Sent ✓"; setTimeout(() => { if (btn) btn.innerText = "Email"; }, 1800); }
+                } else if (r.error === "no valid email") {
+                    alert("No valid email for " + (s.surname || s.id) + ". Add it in Edit first.");
+                } else {
+                    alert("Could not email " + (s.surname || s.id) + ": " + r.error);
+                }
+            });
+        }
+
+        // Bulk: email every selected student's card. Shows progress, then a summary
+        // of successes and any failures (so a typo'd email doesn't fail silently).
+        async function bulkEmailPDFs() {
+            if (_selectedIds.size === 0) { alert("Select at least one student using the checkboxes."); return; }
+            const sel = students.filter(s => _selectedIds.has(s.id));
+            if (sel.length === 0) { alert("None of the selected IDs match the current roster."); return; }
+            const btn = document.getElementById('bulkEmailBtn');
+            btn.disabled = true;
+            const total = sel.length;
+            let okCount = 0, failCount = 0;
+            const fails = [];
+            try {
+                for (const s of sel) {
+                    const r = await sendCardEmail(s, null);
+                    if (r.ok) okCount++;
+                    else { failCount++; fails.push((s.surname || s.id) + ": " + r.error); }
+                    btn.innerText = `Emailing ${okCount + failCount}/${total}...`;
+                    // Small gap so we don't hammer the server / trip rate limits.
+                    await new Promise(res => setTimeout(res, 400));
+                }
+                let msg = `Emailed ${okCount} ID card(s) successfully.`;
+                if (failCount) msg += "\n\n" + failCount + " failed:\n" + fails.slice(0, 12).join("\n");
+                alert(msg);
+            } catch (e) {
+                alert("Bulk email failed: " + ((e && e.message) ? e.message : e));
+            } finally {
+                updateBulkButton();
+            }
+        }
+
+        // ===================== QUESTIONNAIRE SYNC (Phase 2) =====================
+        // Students submit a Google Form (name, ID, photo, level). This engine pulls
+        // those responses and fills ONLY name/id/photo/level — never the exec-managed
+        // fields (dues, souvenirs, DOB, email). Non-destructive by design.
+        const SYNC_CONFIG = {
+            // Paste the Web App URL from your Apps Script deployment (see setup guide):
+            webAppUrl: "https://script.google.com/macros/s/AKfycby2413fXe-ZeLzU8l_Ma3YIj3JPZ96nS0_wFQ_Ur5eFG6Le68RJXrxoNGkXS1Si2f4/exec",
+            // Shared secret checked by the Apps Script (change it in BOTH places):
+            key: "chisag-2026",
+            // Exact FORM QUESTION TITLES -> internal fields:
+            fieldMap: {
+                id: "Index ID",
+                surname: "Surname",
+                otherNames: "Other Names",
+                level: "Level"
+            },
+            // Exact title of the photo question (set to match your form). Using an
+            // explicit title avoids clashes if you add other "upload/image" questions.
+            photoColumn: "Upload your picture",
+            // Exact title of the FORM QUESTION that collected the student's email.
+            // Google Forms' default when "Collect email addresses" is enabled is
+            // "Email address". The Apps Script forwards EVERY column, so as long as
+            // this matches the header, the per-student email is captured automatically.
+            emailColumn: "Email Address",
+            // MASTER NAME LOOKUP — pull the official name from CHISAG_MASTER_NAMES.js
+            // by Index ID, instead of trusting what the student typed (typos/omissions).
+            useMasterNames: true,
+            // If a submitted Index ID is NOT in the master list:
+            //   false -> reject it (only registered members can populate)  [recommended]
+            //   true  -> accept it using the name the student typed (flagged unverified)
+            allowUnknownIds: true,
+            pollMs: 20000,   // auto re-check interval (ms)
+            auto: true,      // set false to disable background polling (push mode ignores this)
+            // ---- FIREBASE INSTANT-PUSH (optional upgrade) ----
+            // When enabled: the Apps Script pushes each new submission to Firebase the
+            // instant the student submits, and this page updates with ZERO delay.
+            // When disabled: the page polls the web app every pollMs (near-real-time).
+            firebase: {
+                enabled: true,                                        // push mode ON
+                apiKey: "AIzaSyALYwNkZEmqnRUg6nhk9fs3jkI1HuW0Arc",    // Firebase web API key
+                databaseURL: "https://chisag-database-default-rtdb.firebaseio.com", // Realtime DB URL
+                path: "chisag-2026-submissions",                      // must match RTDB_PATH in the .gs
+                key: "chisag-2026"                                    // verify stamp (must equal SECRET in .gs)
+            }
+        };
+        // Master table is loaded from CHISAG_MASTER_NAMES.js (window.MASTER_NAMES).
+        const MASTER = (typeof MASTER_NAMES !== 'undefined') ? MASTER_NAMES : {};
+
+        // --- UNVERIFIED / PENDING-VERIFICATION STATE ---
+        // Confirmed-but-not-in-the-file master additions (persisted so future syncs
+        // auto-trust them) and IDs the admin has explicitly rejected.
+        let masterAdditions = {};
+        let rejectedIds = {};
+        function loadMasterAdditions() {
+            try {
+                const raw = localStorage.getItem('chisag_master_additions');
+                if (raw) masterAdditions = JSON.parse(raw) || {};
+            } catch (e) { masterAdditions = {}; }
+            if (typeof MASTER_NAMES !== 'undefined') {
+                Object.keys(masterAdditions).forEach(id => { MASTER_NAMES[id] = masterAdditions[id]; });
+            }
+            if (typeof MASTER !== 'undefined') {
+                Object.keys(masterAdditions).forEach(id => { MASTER[id] = masterAdditions[id]; });
+            }
+        }
+        function saveMasterAdditions() {
+            try { localStorage.setItem('chisag_master_additions', JSON.stringify(masterAdditions)); } catch (e) {}
+        }
+        function loadRejectedIds() {
+            try {
+                const raw = localStorage.getItem('chisag_rejected_ids');
+                if (raw) rejectedIds = JSON.parse(raw) || {};
+            } catch (e) { rejectedIds = {}; }
+        }
+        function saveRejectedIds() {
+            try { localStorage.setItem('chisag_rejected_ids', JSON.stringify(rejectedIds)); } catch (e) {}
+        }
+        loadMasterAdditions();
+        loadRejectedIds();
+
+        let _syncTimer = null;
+        let _firebaseLive = false;
+        // Rows already processed from the questionnaire (by sheet row number) so that
+        // re-runs / Firebase replays don't double-count. Persisted in IndexedDB.
+        let syncedRows = new Set();
+        // Rows queued for the batched photo fetch (Bug 2 fix). processSubmission
+        // pushes here; flushPendingPhotos() drains it in ONE request per cycle.
+        let _pendingPhotos = [];
+        async function loadSyncedRows() {
+            try {
+                const db = await openDB();
+                const rows = await new Promise((res, rej) => {
+                    const tx = db.transaction(STORE_NAME, 'readonly');
+                    const req = tx.objectStore(STORE_NAME).get('chisag_synced_rows');
+                    req.onsuccess = () => res(req.result || []);
+                    req.onerror = () => rej(req.error);
+                });
+                syncedRows = new Set(rows);
+            } catch (e) { syncedRows = new Set(); }
+        }
+        async function resetSyncCache() {
+            try {
+                syncedRows = new Set();
+                await saveSyncedRows();
+                setSyncStatus("Sync cache cleared — next sync will re-check all rows", false);
+                alert("Sync cache cleared.\nNext time you click Sync Form, all rows will be re-checked against the current master list.");
+            } catch (e) {
+                console.error("resetSyncCache failed", e);
+                alert("Could not clear cache. See DevTools console.");
+            }
+        }
+
+        async function saveSyncedRows() {
+            try {
+                const db = await openDB();
+                await new Promise((res, rej) => {
+                    const tx = db.transaction(STORE_NAME, 'readwrite');
+                    tx.objectStore(STORE_NAME).put([...syncedRows], 'chisag_synced_rows');
+                    tx.oncomplete = () => res();
+                    tx.onerror = () => rej(tx.error);
+                });
+            } catch (e) { /* non-fatal */ }
+        }
+
+        // --- Shared row processor (used by BOTH polling and Firebase push) ---
+        // Non-destructive: fills ONLY name/id/photo/level, never exec-managed fields.
+        async function processSubmission(r) {
+            const id = String(r[SYNC_CONFIG.fieldMap.id] || r.id || "").trim();
+            if (!id) {
+                console.log("processSubmission: skipped row — no ID", r);
+                return { skipped: true };
+            }
+            // Dedup key: prefer the sheet row number, but fall back to a stable
+            // composite so we never track `undefined` (which would silently drop
+            // every later submission). (Bug 1 hardening)
+            const syncKey = (r._row != null) ? r._row : (id + "|" + (r.timestamp || ""));
+            if (syncedRows.has(syncKey)) {
+                console.log("processSubmission: skipped ID " + id + " — already in sync cache (syncKey=" + syncKey + ")");
+                return { skipped: true };
+            }
+            // Admin explicitly rejected this ID — never let it re-populate.
+            if (rejectedIds[id]) {
+                console.log("processSubmission: skipped ID " + id + " — explicitly rejected");
+                syncedRows.add(syncKey);
+                return { skipped: true };
+            }
+
+            // Firebase spam guard: ignore nodes that don't carry our stamp.
+            if (SYNC_CONFIG.firebase && SYNC_CONFIG.firebase.key && r.key && r.key !== SYNC_CONFIG.firebase.key) {
+                console.log("processSubmission: rejected ID " + id + " — wrong key stamp");
+                syncedRows.add(syncKey);
+                return { rejected: 1 };
+            }
+
+            const m = (SYNC_CONFIG.useMasterNames) ? MASTER[id] : null;
+            if (SYNC_CONFIG.useMasterNames && !m && !SYNC_CONFIG.allowUnknownIds) {
+                console.log("processSubmission: rejected ID " + id + " — not in CHISAG_MASTER_NAMES.js");
+                syncedRows.add(syncKey);
+                return { rejected: 1 }; // not a registered member
+            }
+
+            let s = students.find(x => x.id === id);
+            let added = 0, filled = 0, photos = 0;
+            if (!s) {
+                s = {
+                    id: id, surname: "", otherNames: "", level: "",
+                    dob: "", dues: "No", souvenirs: "No", souvTaken: "No",
+                    email: "", gradClass: "", photo: "",
+                    dateAdded: new Date().toISOString(), source: "form"
+                };
+                if (SYNC_CONFIG.useMasterNames && !m) s.verified = false;
+                students.push(s);
+                added++;
+            }
+
+            if (m) {
+                s.verified = true;
+                if (s.surname !== m.s) { s.surname = m.s; filled++; }
+                if (s.otherNames !== m.o) { s.otherNames = m.o; filled++; }
+                if (!s.level) { s.level = m.l; filled++; }
+            } else {
+                const want = {
+                    surname: r[SYNC_CONFIG.fieldMap.surname],
+                    otherNames: r[SYNC_CONFIG.fieldMap.otherNames],
+                    level: r[SYNC_CONFIG.fieldMap.level]
+                };
+                Object.keys(want).forEach(k => {
+                    const v = want[k];
+                    if (v != null && String(v).trim() !== "" && (!s[k] || String(s[k]).trim() === "")) {
+                        s[k] = String(v).trim().toUpperCase();
+                        filled++;
+                    }
+                });
+            }
+
+            // Capture the student's email from the form. The Apps Script forwards
+            // every response column (including the form's email column), so we just
+            // read it by header. Never overwritten by the master lookup, and only
+            // set when it actually looks like an email so we don't blank it.
+            const emailCol = SYNC_CONFIG.emailColumn;
+            const formEmail = (emailCol && r[emailCol] != null) ? String(r[emailCol]).trim() : "";
+            if (formEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(formEmail)) s.email = formEmail;
+
+            if (!s.photo) {
+                if (r.photoBase64) { s.photo = r.photoBase64; photos++; }
+                // Queue the photo for a SINGLE batched fetch (Bug 2 fix). Instead of
+                // one sequential network request per row, flushPendingPhotos() pulls
+                // every queued photo in one call to the "?photos=1" endpoint.
+                else if (r.hasPhoto && r._row && SYNC_CONFIG.webAppUrl && !SYNC_CONFIG.webAppUrl.includes("PASTE")) {
+                    _pendingPhotos.push({ row: r._row, s: s, id: id });
+                }
+            }
+
+            syncedRows.add(syncKey);
+            if (added || filled) {
+                console.log("processSubmission: accepted ID " + id + " (added=" + added + ", filled=" + filled + ", photos=" + photos + ")");
+            }
+            return { added, filled, photos };
+        }
+
+        // Batched photo fetch (Bug 2 fix). Replaces N+1 sequential requests with a
+        // single call to the Apps Script "?photos=1&rows=..." endpoint. Returns the
+        // number of photos filled so callers can roll it into the sync summary.
+        async function flushPendingPhotos() {
+            if (_pendingPhotos.length === 0) return 0;
+            const batch = _pendingPhotos;
+            _pendingPhotos = [];
+            let filled = 0;
+
+            // Primary: one batched call to the "?photos=1" endpoint (fast, but
+            // only works if the Apps Script was redeployed with that endpoint).
+            try {
+                const rowsParam = batch.map(p => p.row).join(",");
+                const res = await fetch(SYNC_CONFIG.webAppUrl + "?photos=1&rows=" + encodeURIComponent(rowsParam) + "&key=" + encodeURIComponent(SYNC_CONFIG.key) + "&t=" + Date.now(), { cache: "no-store" });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const arr = await res.json();
+                if (Array.isArray(arr)) {
+                    arr.forEach(item => {
+                        if (!item || !item.photoBase64) return;
+                        const p = batch.find(x => x.row === item._row);
+                        if (p && !p.s.photo) { p.s.photo = item.photoBase64; filled++; }
+                    });
+                }
+            } catch (e) {
+                console.warn("Bulk photo fetch failed (endpoint not deployed?); falling back to per-row.", e.message);
+            }
+
+            // Fallback: for any photo still missing, fetch individually via the
+            // always-available "?row=N" endpoint. Works with ANY deployed version
+            // of the .gs, so photos no longer depend on the bulk endpoint being live.
+            const stillMissing = batch.filter(p => !p.s.photo);
+            for (const p of stillMissing) {
+                try {
+                    const res = await fetch(SYNC_CONFIG.webAppUrl + "?row=" + p.row + "&key=" + encodeURIComponent(SYNC_CONFIG.key) + "&t=" + Date.now(), { cache: "no-store" });
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    const one = await res.json();
+                    if (one && one[0] && one[0].photoBase64 && !p.s.photo) { p.s.photo = one[0].photoBase64; filled++; }
+                } catch (e) {
+                    console.warn("Per-row photo fetch failed for row " + p.row + ":", e.message);
+                }
+            }
+            return filled;
+        }
+
+        async function afterProcess(results, mode) {
+            const agg = results.reduce((a, r) => {
+                a.added += r.added || 0; a.filled += r.filled || 0;
+                a.photos += r.photos || 0; a.rejected += r.rejected || 0;
+                a.skipped += r.skipped ? 1 : 0;
+                return a;
+            }, { added: 0, filled: 0, photos: 0, rejected: 0, skipped: 0 });
+
+            await saveSyncedRows();
+            if (agg.added || agg.filled || agg.photos) {
+                await saveStudentsToDB();
+                renderTable();
+                checkBirthdayBanner();
+            }
+            const ts = new Date().toLocaleTimeString();
+            const prefix = (mode === "push") ? "Live (push) " : "Last poll ";
+            let txt = prefix + ts;
+            if (agg.added) txt += "  •  +" + agg.added + " new";
+            if (agg.filled) txt += "  •  " + agg.filled + " filled";
+            if (agg.photos) txt += "  •  " + agg.photos + " photo";
+            if (agg.rejected) txt += "  •  " + agg.rejected + " rejected";
+            if (agg.skipped) txt += "  •  " + agg.skipped + " already synced";
+            setSyncStatus(txt, false);
+            return agg;
+        }
+
+        // --- Firebase instant-push listener (optional) ---
+        function initFirebase() {
+            const fb = SYNC_CONFIG.firebase;
+            if (!fb || !fb.enabled) return false;
+            if (typeof firebase === "undefined") {
+                setSyncStatus("Firebase SDK offline — using poll", false);
+                return false;
+            }
+            if (!fb.databaseURL || fb.databaseURL.indexOf("FIREBASE") >= 0) {
+                setSyncStatus("Set firebase.databaseURL — using poll", false);
+                return false;
+            }
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp({ apiKey: fb.apiKey, databaseURL: fb.databaseURL });
+                }
+                const db = firebase.database();
+                db.ref(fb.path).on("child_added", async (snap) => {
+                    const val = snap.val();
+                    if (!val) return;
+                    const res = await processSubmission(val);
+                    const pf = await flushPendingPhotos();
+                    const all = pf > 0 ? [res, { added: 0, filled: 0, photos: pf }] : [res];
+                    await afterProcess(all, "push");
+                });
+                _firebaseLive = true;
+                setSyncStatus("Live (push) — waiting for submissions", false);
+                return true;
+            } catch (e) {
+                console.error("Firebase init failed", e);
+                setSyncStatus("Push failed — using poll", false);
+                return false;
+            }
+        }
+
+        function setSyncStatus(text, busy) {
+            const el = document.getElementById('syncStatus');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.toggle('text-ug-gold', !!busy);
+            el.classList.toggle('text-white/70', !busy);
+        }
+
+        async function syncFromForm(showAlert) {
+            if (!SYNC_CONFIG.webAppUrl || SYNC_CONFIG.webAppUrl.includes("PASTE")) {
+                if (showAlert) alert("Set SYNC_CONFIG.webAppUrl first.\nSee CHISAG_SYNC_SETUP.md for steps.");
+                return;
+            }
+            setSyncStatus("Syncing (poll)…", true);
+            try {
+                // Lightweight "meta" poll (no photos) — cheap to run every cycle.
+                const res = await fetch(SYNC_CONFIG.webAppUrl + "?meta=1&key=" + encodeURIComponent(SYNC_CONFIG.key) + "&t=" + Date.now(), { cache: "no-store" });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const rows = await res.json();
+                if (rows && rows.error) throw new Error(rows.error);
+                if (!Array.isArray(rows)) throw new Error("Unexpected response from server");
+                const results = [];
+                for (const r of rows) results.push(await processSubmission(r));
+                const pf = await flushPendingPhotos();
+                if (pf > 0) results.push({ added: 0, filled: 0, photos: pf });
+                await afterProcess(results, "poll");
+                if (showAlert) {
+                    const agg = results.reduce((a, r) => {
+                        a.added += r.added || 0; a.filled += r.filled || 0;
+                        a.photos += r.photos || 0; a.rejected += r.rejected || 0;
+                        a.skipped += r.skipped ? 1 : 0;
+                        return a;
+                    }, { added: 0, filled: 0, photos: 0, rejected: 0, skipped: 0 });
+                    const already = agg.skipped ? ("\n  " + agg.skipped + " already synced (click Reset sync cache if you updated the master list)") : "";
+                    alert("Poll sync complete:\n  " + agg.added + " new student(s)\n  " + agg.filled + " field(s) filled\n  " + agg.photos + " photo(s) fetched" + (agg.rejected ? "\n  " + agg.rejected + " rejected (ID not in master)" : "") + already);
+                }
+            } catch (err) {
+                console.error(err);
+                setSyncStatus("Sync error — check link/connection", false);
+                if (showAlert) alert("Sync failed: " + err.message);
+            }
+        }
+
+        async function testSyncConnection() {
+            if (!SYNC_CONFIG.webAppUrl || SYNC_CONFIG.webAppUrl.includes("PASTE")) {
+                alert("Set SYNC_CONFIG.webAppUrl first.\nSee CHISAG_SYNC_SETUP.md for steps.");
+                return;
+            }
+            setSyncStatus("Testing connection…", true);
+            try {
+                const res = await fetch(SYNC_CONFIG.webAppUrl + "?debug=1&key=" + encodeURIComponent(SYNC_CONFIG.key) + "&t=" + Date.now(), { cache: "no-store" });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                const headerList = (data.headers || []).join(" | ");
+                const sampleRow = (data.sample && data.sample[0]) || {};
+                const sampleId = sampleRow["Index ID"] || sampleRow["index id"] || "none";
+                const hasPhoto = sampleRow.hasPhoto ? "yes" : "no";
+                alert("Connection OK ✓\n\nSheet name: " + data.sheetName + "\nResponse rows: " + data.totalRows + "\nPhoto column index: " + data.photoColumn + "\nHeaders:\n" + headerList + "\n\nSample row: ID=" + sampleId + ", photo=" + hasPhoto + "\n\nIf rows > 0 but Sync Form adds 0 students, the Index ID is not in CHISAG_MASTER_NAMES.js (useMasterNames=true rejects unknown IDs).");
+            } catch (err) {
+                console.error(err);
+                setSyncStatus("Test failed — check link/connection", false);
+                alert("Test failed: " + err.message);
+            }
+        }
+
+        function startAutoSync() {
+            if (_firebaseLive) return; // push listener already handles live updates
+            if (!SYNC_CONFIG.auto) return;
+            if (_syncTimer) clearInterval(_syncTimer);
+            _syncTimer = setInterval(() => syncFromForm(false), SYNC_CONFIG.pollMs);
+            setTimeout(() => syncFromForm(false), 3000); // run shortly after load
+        }
+
+        // Optional upgrade to TRUE real-time push (no polling delay):
+        // add Firebase Realtime DB and call syncFromForm(false) inside its on('value')/
+        // onChildAdded listener. The polling above still works as a fallback.
+        // ===========================================================================
+
+        loadStudentsFromDB().then(async d => {
+            students = d;
+            await loadSyncedRows();
+            renderTable();
+            checkBirthdayBanner();
+            initFirebase();      // start instant-push listener if enabled
+            startAutoSync();     // polling fallback (only when push is off)
+        });
+    </script>
+</body>
+</html>
