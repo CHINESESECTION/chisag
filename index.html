@@ -1,10 +1,14 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CHISAG Master System</title>
+    <title>CHISAG — Google + Questionnaire</title>
+    <!-- VARIANT: Google Forms + CHISAG Questionnaire.html only.
+         The Microsoft Forms / Power Automate channel has been removed.
+         Sources accepted: "google" (Apps Script) and "standalone" (Questionnaire.html). -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" href="favicon.svg">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -22,6 +26,7 @@
          skipped and the system falls back to polling. -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 
     <script>
         tailwind.config = {
@@ -63,11 +68,15 @@
     <header class="bg-ug-blue text-white p-5 shadow-xl border-b-4 border-ug-gold sticky top-0 z-50">
         <div class="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-4">
             <div>
-                <h1 class="text-2xl font-extrabold tracking-wide uppercase font-serif">CHISAG Master System</h1>
+                <h1 class="text-2xl font-extrabold tracking-wide uppercase font-serif">CHISAG</h1>
                 <p class="text-xs text-ug-gold font-semibold tracking-wider opacity-90">University of Ghana • Chinese Section Database</p>
             </div>
             
             <div class="flex flex-wrap gap-3 items-center justify-center">
+                <button id="notifBell" onclick="toggleNotifications()" class="bg-white/10 hover:bg-white/20 text-white/70 border border-ug-gold/50 font-bold p-2 rounded-md shadow flex items-center transition" title="Enable phone notifications for new submissions">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                </button>
+            
                 <button onclick="openAcademicModal()" class="bg-white/10 hover:bg-white/20 text-white border border-ug-gold/50 font-bold py-2 px-4 rounded-md shadow flex items-center transition duration-200 group">
                     <svg class="w-5 h-5 mr-2 text-ug-gold group-hover:rotate-180 transition-transform duration-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     New Academic Year?
@@ -234,6 +243,12 @@
                         <option value="id_desc">Index: High → Low</option>
                         <option value="id_asc">Index: Low → High</option>
                         <option value="lvl_asc">Level: Low - High</option>
+                    </select>
+
+                    <select id="sourceFilterSel" onchange="window._blendedSource=this.value; renderTable();" class="p-2.5 border border-slate-300 rounded-md bg-white text-sm w-full md:w-auto focus:border-ug-gold focus:outline-none cursor-pointer font-medium text-slate-600" style="display:none;">
+                        <option value="all" selected>Source: All</option>
+                        <option value="google">Source: Google Form</option>
+                        <option value="standalone">Source: Web Form (Questionnaire)</option>
                     </select>
                 </div>
 
@@ -681,6 +696,18 @@
                 if (currentView === 'alumni' && !isAlumni) return false;
                 if (currentView === 'pending' && s.verified !== false) return false;
 
+                // Source filter (Google + Questionnaire build). Records are tagged
+                // "google" (Google Forms via Apps Script) or "standalone"
+                // (CHISAG Questionnaire.html). The Microsoft channel is removed.
+                const src = (s.source || "google");
+                if (src === 'microsoft') return false;   // channel not available in this build
+                if (SYNC_CONFIG.mode === 'blended') {
+                    const bs = (window._blendedSource || 'all');
+                    if (bs !== 'all' && src !== bs) return false;
+                } else { // google
+                    if (src !== 'google') return false;
+                }
+
                 if (search && !JSON.stringify(s).toLowerCase().includes(search)) return false;
 
                 if (currentView === 'active') {
@@ -755,7 +782,7 @@
                                 ${s.photo ? '<div class="absolute inset-0 bg-black/20 rounded-full opacity-0 group-hover/photo:opacity-100 transition flex items-center justify-center"><svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></div>' : ''}
                             </div>
                             <div>
-                                <div class="font-bold text-slate-800 text-sm">${esc(s.surname)}, ${esc(s.otherNames)} ${emoji} ${s.verified === false ? '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold ml-1 align-middle">⚠ Unverified</span>' : ''} ${s.emailed ? '<span class="text-green-600 font-bold ml-1 align-middle" title="Email sent">✓</span>' : ''}</div>
+                                <div class="font-bold text-slate-800 text-sm">${esc(s.surname)}, ${esc(s.otherNames)} ${emoji} ${s.verified === false ? '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold ml-1 align-middle">⚠ Unverified</span>' : ''} ${s.emailed ? '<span class="text-green-600 font-bold ml-1 align-middle" title="Email sent">✓</span>' : ''} ${s.source === 'microsoft' ? '<span class="bg-sky-100 text-sky-700 px-2 py-0.5 rounded text-[10px] font-bold ml-1 align-middle">MS</span>' : (s.source === 'google' ? '<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold ml-1 align-middle">G</span>' : (s.source === 'standalone' ? '<span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold ml-1 align-middle">WEB</span>' : ''))}</div>
                                 <div class="text-xs text-ug-blue font-mono font-medium">${esc(s.id)}</div>
                             </div>
                         </div>
@@ -1152,7 +1179,9 @@
             try {
                 const pdf = await renderCardToDataUrl(s);
                 const name = ((s.surname || "") + " " + (s.otherNames || "")).trim();
-                const res = await fetch(SYNC_CONFIG.webAppUrl, {
+                // All ID-card emails go out through the Google Apps Script (Gmail).
+                const endpoint = SYNC_CONFIG.webAppUrl;
+                const res = await fetch(endpoint, {
                     method: "POST",
                     headers: { "Content-Type": "text/plain" }, // simple type -> no CORS preflight
                     body: JSON.stringify({ to: s.email, pdf: pdf, name: name, otherNames: (s.otherNames || ""), key: SYNC_CONFIG.key })
@@ -1264,7 +1293,8 @@
                 id: "Index ID",
                 surname: "Surname",
                 otherNames: "Other Names",
-                level: "Level"
+                level: "Level",
+                dob: "Date of Birth"
             },
             // Exact title of the photo question (set to match your form). Using an
             // explicit title avoids clashes if you add other "upload/image" questions.
@@ -1291,9 +1321,30 @@
                 enabled: true,                                        // push mode ON
                 apiKey: "AIzaSyALYwNkZEmqnRUg6nhk9fs3jkI1HuW0Arc",    // Firebase web API key
                 databaseURL: "https://chisag-database-default-rtdb.firebaseio.com", // Realtime DB URL
+                projectId: "chisag-database",                         // Firebase console -> Project settings
+                authDomain: "chisag-database.firebaseapp.com",
+                storageBucket: "chisag-database.appspot.com",
+                messagingSenderId: "PASTE_YOUR_FCM_SENDER_ID",        // Project settings -> Cloud Messaging (Sender ID, digits only)
+                appId: "PASTE_YOUR_APP_ID",                           // Project settings -> Your apps -> SDK setup and config
+                vapidKey: "PASTE_YOUR_VAPID_KEY",                     // Cloud Messaging -> Web Push certificates -> Generate key pair
+                fcmTokensPath: "chisag-fcm-tokens",                   // where this device's push token is stored
                 path: "chisag-2026-submissions",                      // must match RTDB_PATH in the .gs
                 key: "chisag-2026"                                    // verify stamp (must equal SECRET in .gs)
-            }
+            },
+            // ---- SOURCE MODE (Google + Questionnaire build) ----
+            // Keep this on "blended" so BOTH channels display:
+            //   "google"     -> Google Forms (Apps Script)   -> source: "google"
+            //   "standalone" -> CHISAG Questionnaire.html    -> source: "standalone"
+            // Setting it to "google" would hide the Questionnaire entries.
+            // (The "microsoft" / Power Automate channel has been removed from this build.)
+            mode: "blended",
+            // The Apps Script web app serves on-demand photos for Google Forms rows
+            // (?photos=1 / ?row=N). The Questionnaire embeds its photo as base64
+            // already, so this endpoint is only used for the Google channel.
+            useAppScriptPhotoEndpoint: true,
+            // Whether the "Sync Now" button polls the Apps Script web app for rows.
+            // Keep true: this is how Google Forms submissions are pulled in.
+            pollFormEndpoint: true
         };
         // Master table is loaded from CHISAG_MASTER_NAMES.js (window.MASTER_NAMES).
         const MASTER = (typeof MASTER_NAMES !== 'undefined') ? MASTER_NAMES : {};
@@ -1417,8 +1468,8 @@
                 s = {
                     id: id, surname: "", otherNames: "", level: "",
                     dob: "", dues: "No", souvenirs: "No", souvTaken: "No",
-                    email: "", gradClass: "", photo: "",
-                    dateAdded: new Date().toISOString(), source: "form"
+                    email: "",                     gradClass: "", photo: "",
+                    dateAdded: new Date().toISOString(), source: (r.source || "google")
                 };
                 if (SYNC_CONFIG.useMasterNames && !m) s.verified = false;
                 students.push(s);
@@ -1453,8 +1504,25 @@
             const formEmail = (emailCol && r[emailCol] != null) ? String(r[emailCol]).trim() : "";
             if (formEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(formEmail)) s.email = formEmail;
 
+            // Capture date of birth (day + month only, no year) from the submission.
+            // Stored into the system's "dob" field (format "DD MMM") so it feeds the
+            // birthday banner/calendar and the spreadsheet export automatically.
+            const dobCol = SYNC_CONFIG.fieldMap.dob;
+            const formDob = (dobCol && r[dobCol] != null) ? String(r[dobCol]).trim() : "";
+            const normDob = normalizeDateStr(formDob);
+            if (normDob && /^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/.test(normDob)) {
+                s.dob = normDob;
+            }
+
+            // Stamp the platform that submitted this entry (Google vs Microsoft).
+            // Legacy/google entries with no source default to "google".
+            s.source = r.source || s.source || "google";
+
             if (!s.photo) {
                 if (r.photoBase64) { s.photo = r.photoBase64; photos++; }
+                // Microsoft submissions (Power Automate) may carry the photo as a
+                // data-URL under "photo" instead of "photoBase64".
+                else if (r.photo && /^data:/.test(r.photo)) { s.photo = r.photo; photos++; }
                 // Queue the photo for a SINGLE batched fetch (Bug 2 fix). Instead of
                 // one sequential network request per row, flushPendingPhotos() pulls
                 // every queued photo in one call to the "?photos=1" endpoint.
@@ -1474,6 +1542,9 @@
         // single call to the Apps Script "?photos=1&rows=..." endpoint. Returns the
         // number of photos filled so callers can roll it into the sync summary.
         async function flushPendingPhotos() {
+            // Microsoft submissions store their photo INSIDE Firebase (Power Automate
+            // base64-encodes it), so there is nothing to fetch from the Apps Script.
+            if (!SYNC_CONFIG.useAppScriptPhotoEndpoint) return 0;
             if (_pendingPhotos.length === 0) return 0;
             const batch = _pendingPhotos;
             _pendingPhotos = [];
@@ -1554,7 +1625,7 @@
             }
             try {
                 if (!firebase.apps.length) {
-                    firebase.initializeApp({ apiKey: fb.apiKey, databaseURL: fb.databaseURL });
+                    firebase.initializeApp({ apiKey: fb.apiKey, databaseURL: fb.databaseURL, projectId: fb.projectId, authDomain: fb.authDomain, storageBucket: fb.storageBucket, messagingSenderId: fb.messagingSenderId, appId: fb.appId });
                 }
                 const db = firebase.database();
                 db.ref(fb.path).on("child_added", async (snap) => {
@@ -1584,6 +1655,12 @@
         }
 
         async function syncFromForm(showAlert) {
+            // Microsoft-only mode receives submissions via Power Automate -> Firebase,
+            // not by polling the Apps Script. The webAppUrl is reserved for EMAIL sending.
+            if (!SYNC_CONFIG.pollFormEndpoint) {
+                if (showAlert) alert("This is the Microsoft-only view.\nSubmissions arrive automatically via Microsoft Forms → Power Automate → Firebase — no manual poll needed. Use the Email button to send cards.");
+                return;
+            }
             if (!SYNC_CONFIG.webAppUrl || SYNC_CONFIG.webAppUrl.includes("PASTE")) {
                 if (showAlert) alert("Set SYNC_CONFIG.webAppUrl first.\nSee CHISAG_SYNC_SETUP.md for steps.");
                 return;
@@ -1662,6 +1739,105 @@
             initFirebase();      // start instant-push listener if enabled
             startAutoSync();     // polling fallback (only when push is off)
         });
+
+        // Show the All / Google Form / Web Form source toggle (Blended mode only).
+        (function applyModeUI() {
+            const sel = document.getElementById('sourceFilterSel');
+            if (sel) sel.style.display = (SYNC_CONFIG.mode === 'blended') ? '' : 'none';
+        })();
     </script>
+<script>
+    // ===== CHISAG push notifications (real-time dashboard listener + FCM for closed/background) =====
+    (function () {
+        var NOTIF_KEY = 'chisag_notif_enabled';
+        var BELL = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>';
+        var ready = false, armed = false, fcmReady = false;
+        window.__chisagNotify = localStorage.getItem(NOTIF_KEY) === '1';
+
+        function bell() { return document.getElementById('notifBell'); }
+        function fcfg() {
+            var f = (typeof SYNC_CONFIG !== 'undefined' && SYNC_CONFIG.firebase) || {};
+            if (!f.messagingSenderId || String(f.messagingSenderId).indexOf('PASTE_') === 0) return null;
+            if (!f.appId || String(f.appId).indexOf('PASTE_') === 0) return null;
+            return f;
+        }
+        function updateBell() {
+            var b = bell(); if (!b) return;
+            if (!('Notification' in window)) { b.disabled = true; b.style.opacity = '.5'; b.title = 'Notifications not supported on this browser'; return; }
+            var on = window.__chisagNotify && Notification.permission === 'granted';
+            b.innerHTML = BELL;
+            b.title = on ? 'Notifications ON - click to mute' : 'Enable phone notifications for new submissions';
+            b.classList.toggle('text-ug-gold', on);
+            b.classList.toggle('text-white/70', !on);
+        }
+        function nameOf(s) {
+            s = s || {};
+            var n = [(s.otherNames || s['Other Names'] || ''), (s.surname || s.Surname || '')].filter(Boolean).join(' ').trim();
+            var id = s.id || s['Index ID'] || s['STUD. ID'] || '';
+            return (n + ' ' + (id ? ('(' + id + ')') : '')).trim();
+        }
+        function showNotif(s) {
+            var txt = nameOf(s) || 'A new membership form was submitted.';
+            try {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification('New CHISAG submission', { body: txt, icon: 'favicon.svg' });
+                }
+            } catch (e) { console.warn('notify failed', e); }
+        }
+        function arm() {
+            if (armed) return;
+            if (typeof firebase === 'undefined' || !SYNC_CONFIG || !SYNC_CONFIG.firebase || !SYNC_CONFIG.firebase.enabled) return;
+            try {
+                if (!firebase.apps.length) firebase.initializeApp({ apiKey: SYNC_CONFIG.firebase.apiKey, databaseURL: SYNC_CONFIG.firebase.databaseURL, projectId: SYNC_CONFIG.firebase.projectId, authDomain: SYNC_CONFIG.firebase.authDomain, storageBucket: SYNC_CONFIG.firebase.storageBucket, messagingSenderId: SYNC_CONFIG.firebase.messagingSenderId, appId: SYNC_CONFIG.firebase.appId });
+                var db = firebase.database();
+                var p = SYNC_CONFIG.firebase.path;
+                db.ref(p).on('child_added', function (snap) {
+                    if (!ready) return;
+                    // Only the visible tab shows (avoids double alert with the background push).
+                    if (window.__chisagNotify && ('Notification' in window) && Notification.permission === 'granted' && document.visibilityState === 'visible') showNotif(snap.val() || {});
+                });
+                db.ref(p).limitToLast(1).once('value', function () { ready = true; });
+                armed = true;
+            } catch (e) { console.warn('arm failed', e); }
+        }
+        // Register THIS device so a Cloud Function can push even when the tab is closed.
+        function setupFCM() {
+            if (fcmReady) return;
+            var f = fcfg();
+            if (!f || typeof firebase === 'undefined' || !firebase.messaging) return;
+            try {
+                if (!firebase.apps.length) firebase.initializeApp({ apiKey: f.apiKey, databaseURL: f.databaseURL, projectId: f.projectId, authDomain: f.authDomain, storageBucket: f.storageBucket, messagingSenderId: f.messagingSenderId, appId: f.appId });
+                var messaging = firebase.messaging();
+                // Visible tab: let the real-time listener above handle it; suppress FCM auto-pop.
+                messaging.onMessage(function () { /* handled by RTDB listener when the tab is visible */ });
+                function saveToken(token) {
+                    if (!token) return;
+                    var path = (f.fcmTokensPath || 'chisag-fcm-tokens');
+                    firebase.database().ref(path + '/' + token).set({ ts: Date.now(), ua: navigator.userAgent || '' });
+                    fcmReady = true;
+                }
+                messaging.getToken({ vapidKey: f.vapidKey }).then(saveToken).catch(function (e) { console.warn('FCM getToken failed (check vapidKey / sender id):', e); });
+                if (messaging.onTokenRefresh) messaging.onTokenRefresh(function () { messaging.getToken({ vapidKey: f.vapidKey }).then(saveToken); });
+            } catch (e) { console.warn('setupFCM failed', e); }
+        }
+        window.toggleNotifications = function () {
+            if (!('Notification' in window)) { alert('This browser does not support notifications.'); return; }
+            if (Notification.permission === 'denied') { alert('Notifications are blocked for this site. Please allow them in your browser site-settings (Notifications), then try again.'); return; }
+            if (Notification.permission === 'granted') {
+                window.__chisagNotify = !window.__chisagNotify;
+                localStorage.setItem(NOTIF_KEY, window.__chisagNotify ? '1' : '0');
+                updateBell(); if (window.__chisagNotify) { arm(); setupFCM(); }
+                return;
+            }
+            Notification.requestPermission().then(function (pr) {
+                if (pr === 'granted') { window.__chisagNotify = true; localStorage.setItem(NOTIF_KEY, '1'); arm(); setupFCM(); }
+                else { window.__chisagNotify = false; localStorage.setItem(NOTIF_KEY, '0'); }
+                updateBell();
+            });
+        };
+        window.addEventListener('load', function () { updateBell(); if (window.__chisagNotify) { arm(); setupFCM(); } });
+    })();
+    </script>
+
 </body>
 </html>
